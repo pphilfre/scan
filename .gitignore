@@ -1,0 +1,9 @@
+.DS_Store
+build/
+*.xcodeproj/
+Configuration/GeneratedInfo.plist
+*.xcuserstate
+work/
+
+__pycache__/
+*.pyc

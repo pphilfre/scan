@@ -1,0 +1,74 @@
+name: iOS build
+on:
+  push:
+    branches: [main, work]
+    paths-ignore: ['docs/**', '**/*.md']
+  pull_request:
+    paths-ignore: ['docs/**', '**/*.md']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ios-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  device:
+    name: Device IPA
+    runs-on: macos-26
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+      - name: Prepare Xcode and project
+        run: bash scripts/prepare-macos.sh
+      - name: Cache device compiler modules
+        uses: actions/cache@v4
+        with:
+          path: |
+            build/Device/ModuleCache.noindex
+            build/Device/SDKStatCaches.noindex
+          key: modules-device-${{ runner.arch }}-${{ env.ImageVersion }}-xcode26.6-${{ hashFiles('project.yml') }}
+      - name: Build and package unsigned IPA
+        run: bash scripts/build-ipa.sh
+      - name: Upload IPA and checksum
+        uses: actions/upload-artifact@v4
+        with:
+          name: Folio-device-IPA
+          path: |
+            build/Folio-unsigned.ipa
+            build/Folio-unsigned.ipa.sha256
+          compression-level: 0
+          retention-days: 14
+          if-no-files-found: error
+      - name: Upload build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: device-diagnostics
+          path: build/device-build.log
+          retention-days: 7
+  tests:
+    name: Simulator tests
+    runs-on: macos-26
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+      - name: Prepare Xcode and project
+        run: bash scripts/prepare-macos.sh
+      - name: Cache simulator compiler modules
+        uses: actions/cache@v4
+        with:
+          path: |
+            build/Simulator/ModuleCache.noindex
+            build/Simulator/SDKStatCaches.noindex
+          key: modules-simulator-${{ runner.arch }}-${{ env.ImageVersion }}-xcode26.6-${{ hashFiles('project.yml') }}
+      - name: Run storage, organisation, OCR and PDF tests
+        run: bash scripts/test-ios.sh
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: simulator-results
+          path: |
+            build/*.log
+            build/Tests.xcresult
+          retention-days: 7
