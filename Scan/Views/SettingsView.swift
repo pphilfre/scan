@@ -10,18 +10,23 @@ struct SettingsView: View {
     @Environment(WorkspaceFolder.self) private var workspace
     @AppStorage("iCloudSync") private var iCloudSync = false
     @AppStorage("appLock") private var appLock = false
+    @AppStorage("appearanceMode") private var appearanceMode = "system"
+    @AppStorage("accentColor") private var accentColor = "sage"
     @State private var checking = false
     @State private var message: String?
     @State private var chooseFolder = false
     @State private var disconnecting = false
+    @State private var studyTransfer = false
     var body: some View {
         NavigationStack {
             Form {
                 Section {
+                    if workspace.busy { ProgressView(workspace.restoring ? "Opening working folder…" : "Connecting or saving working folder…") }
                     if let name = workspace.folderName {
                         LabeledContent("Folder", value: name)
+                        Label(workspace.isConnected && workspace.error == nil ? "Connected" : "Needs attention", systemImage: workspace.isConnected && workspace.error == nil ? "checkmark.circle.fill" : "exclamationmark.circle")
+                            .font(.caption).foregroundStyle(workspace.isConnected && workspace.error == nil ? .green : .orange)
                         if let saved = workspace.lastSaved { LabeledContent("Last saved to folder", value: saved.formatted(date: .abbreviated, time: .standard)) }
-                        if workspace.busy { ProgressView("Saving library…") }
                         Button("Save now", systemImage: "externaldrive.badge.checkmark") { Task { await workspace.saveNow(context: context) } }.disabled(workspace.busy || !workspace.isConnected)
                     }
                     Button(workspace.folderName == nil ? "Choose working folder…" : "Choose or reconnect folder…", systemImage: "folder") { chooseFolder = true }.disabled(workspace.busy)
@@ -41,6 +46,16 @@ struct SettingsView: View {
                     if let message = access.message { Text(message).font(.caption).foregroundStyle(.secondary) }
                 } header: { Text("Privacy") } footer: { Text("Uses Face ID or your device passcode. Protect individual books from their menus. Folio locks again when you leave the app.") }
                 DisplayPreferences()
+                Section("Study") {
+                    StudyHapticPreference()
+                    Button("Study import, export and AI prompt") { studyTransfer = true }
+                }
+                Section("Appearance") {
+                    Picker("Theme", selection: $appearanceMode) {
+                        Text("System").tag("system"); Text("Light").tag("light"); Text("Dark").tag("dark")
+                    }
+                    ColorChoices(selection: $accentColor)
+                }
                 Section("Capture") {
                     Text("Add the Folio widget to your Home Screen or Lock Screen, or use the Scan note shortcut. Pages go to Unfiled until you choose a book. Widget and shortcut availability depends on the installation method.").font(.subheadline).foregroundStyle(.secondary)
                 }
@@ -49,6 +64,7 @@ struct SettingsView: View {
             .navigationTitle("Settings").navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() }.disabled(workspace.busy) } }
             .interactiveDismissDisabled(workspace.busy)
+            .sheet(isPresented: $studyTransfer) { StudyTransferView() }
             .fileImporter(isPresented: $chooseFolder, allowedContentTypes: [.folder]) { result in
                 switch result {
                 case .success(let url): Task { do { try await workspace.connect(url, context: context) } catch { workspace.error = error.localizedDescription } }

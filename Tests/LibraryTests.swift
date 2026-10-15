@@ -6,7 +6,7 @@ import PencilKit
 
 final class LibraryTests: XCTestCase {
     @MainActor private func makeContainer() throws -> ModelContainer {
-        let schema = Schema([Notebook.self, NotePage.self, BookSection.self, PageRevision.self, PageLink.self])
+        let schema = Schema([Notebook.self, NotePage.self, BookSection.self, PageRevision.self, PageLink.self, StudyItem.self])
         return try ModelContainer(for: schema, configurations: [ModelConfiguration(schema: schema, isStoredInMemoryOnly: true, cloudKitDatabase: .none)])
     }
     @MainActor private func page(_ book: Notebook, rank: Double) -> NotePage {

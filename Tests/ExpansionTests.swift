@@ -5,7 +5,7 @@ import UIKit
 
 final class ExpansionTests: XCTestCase {
     @MainActor private func container(url: URL? = nil) throws -> ModelContainer {
-        let schema = Schema([Notebook.self, BookSection.self, NotePage.self, PageRevision.self, PageLink.self])
+        let schema = Schema([Notebook.self, BookSection.self, NotePage.self, PageRevision.self, PageLink.self, StudyItem.self])
         let config: ModelConfiguration
         if let url { config = ModelConfiguration(schema: schema, url: url, cloudKitDatabase: .none) }
         else { config = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true, cloudKitDatabase: .none) }
@@ -36,6 +36,7 @@ final class ExpansionTests: XCTestCase {
         XCTAssertEqual(page.imageData, Data([4, 5, 6])); XCTAssertEqual(page.drawingData, Data([8, 9]))
         XCTAssertEqual(page.text, "Corrected handwriting"); XCTAssertEqual(page.tags, ["Revision"])
         XCTAssertEqual(page.rotation, 1); XCTAssertFalse(page.isBookmarked); XCTAssertNil(page.trashedAt)
+        XCTAssertTrue(page.photoLayers.isEmpty)
         XCTAssertEqual(ImageAdjustments(data: page.enhancementData), ImageAdjustments())
     }
     @MainActor func testExpandedStoreUpgradePreservesEnhancementsAndVersions() throws {
@@ -197,6 +198,21 @@ final class ExpansionTests: XCTestCase {
         actions.rotate([page], in: context)
         XCTAssertEqual(RecallCover.decode(page.revisionCoverData).first?.rect, oldRect.clockwise())
         XCTAssertEqual(page.imageData, prepared.original)
+    }
+    @MainActor func testPaperPhotoLayersPersistAndCopy() async throws {
+        let prepared = try await PageTemplates.shared.make("Lined")
+        let store = try container(); let context = store.mainContext
+        let page = NotePage(imageData: prepared.original, thumbnailData: prepared.thumbnail, rank: 0)
+        context.insert(page)
+        let first = PagePhoto(data: Data([1, 2, 3]), rect: NormalizedRect(x: 0.1, y: 0.2, width: 0.3, height: 0.2))
+        let second = PagePhoto(data: Data([4, 5, 6]), rect: NormalizedRect(x: 0.5, y: 0.6, width: 0.3, height: 0.2))
+        page.photoLayers = [first, second]
+        try context.save()
+        let restored = try XCTUnwrap(context.fetch(FetchDescriptor<NotePage>()).first)
+        XCTAssertEqual(restored.photoLayers, [first, second])
+        XCTAssertEqual(restored.copy(to: nil).photoLayers, [first, second])
+        XCTAssertEqual(try JSONDecoder().decode(PageState.self, from: JSONEncoder().encode(PageState(restored))).photos, [first, second])
+        XCTAssertEqual(restored.imageData, prepared.original)
     }
     @MainActor func testWorkingFolderRestoresIntoFreshContainerAndProtectsIndex() async throws {
         let directory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)

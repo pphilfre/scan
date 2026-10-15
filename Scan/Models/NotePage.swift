@@ -19,6 +19,11 @@ import SwiftData
     @Attribute(.externalStorage) var imageData: Data = Data()
     @Attribute(.externalStorage) var thumbnailData: Data = Data()
     @Attribute(.externalStorage) var drawingData: Data = Data()
+    @Attribute(.externalStorage) var storedPhotoLayersData: Data?
+    var photoLayers: [PagePhoto] {
+        get { (try? JSONDecoder().decode([PagePhoto].self, from: storedPhotoLayersData ?? Data())) ?? [] }
+        set { storedPhotoLayersData = (try? JSONEncoder().encode(newValue)) ?? Data() }
+    }
     var book: Notebook?
     var isBookmarked: Bool = false
     var trashedAt: Date?
@@ -59,6 +64,7 @@ import SwiftData
         page.rotation = rotation
         page.tags = tags
         page.drawingData = drawingData
+        page.photoLayers = photoLayers
         page.detectedDate = detectedDate
         page.recognitionState = recognitionState
         page.recognitionConfidence = recognitionConfidence

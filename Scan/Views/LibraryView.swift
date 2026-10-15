@@ -27,6 +27,18 @@ struct LibraryView: View {
                     if workspace.error != nil {
                         Button("Working folder needs attention", systemImage: "exclamationmark.triangle") { settings = true }.font(.caption)
                     }
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("Study").font(.system(.title2, design: .serif))
+                        LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
+                            ForEach(StudyArea.allCases) { area in
+                                NavigationLink { StudyLibraryView(area: area) } label: {
+                                    Label(area.rawValue, systemImage: area.symbol).font(.subheadline.weight(.medium))
+                                        .frame(maxWidth: .infinity, minHeight: 54, alignment: .leading).padding(.horizontal, 14)
+                                        .background(.background, in: RoundedRectangle(cornerRadius: 16))
+                                }.buttonStyle(.plain).accessibilityIdentifier("library.study." + area.id)
+                            }
+                        }
+                    }
                     if unfiledCount > 0 {
                         Button { inbox = true } label: {
                             HStack {
@@ -56,7 +68,7 @@ struct LibraryView: View {
                     }
                 }.padding(26).frame(maxWidth: 1100).frame(maxWidth: .infinity)
             }
-            .background(FolioStyle.paper).navigationTitle("Books")
+            .background(FolioStyle.paper).navigationTitle("Library")
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Menu {
@@ -68,20 +80,14 @@ struct LibraryView: View {
                     } label: { Image(systemName: "line.3.horizontal") }
                 }
                 ToolbarItem(placement: .topBarTrailing) { Button("Search", systemImage: "magnifyingglass") { searching = true } }
-                ToolbarItem(placement: .topBarTrailing) {
-                    Menu {
-                        Button("New book", systemImage: "book.closed") { newBook = true }
-                        Button("Import pages", systemImage: "folder") { capture = true }
-                    } label: { Image(systemName: "plus") }
-                }
-                ToolbarItem(placement: .bottomBar) {
-                    Button { capture = true; FolioStyle.haptic() } label: {
-                        Label("Add pages", systemImage: "document.viewfinder").font(.subheadline.weight(.semibold)).padding(.horizontal, 24).padding(.vertical, 6)
-                    }.buttonStyle(.glassProminent).disabled(importer.isBusy).accessibilityIdentifier("library.addPages")
-                }
+                ToolbarItem(placement: .topBarTrailing) { Button("New book", systemImage: "plus") { newBook = true } }
             }
             .safeAreaInset(edge: .bottom) {
-                VStack(spacing: 8) { if importer.isBusy { ImportProgress(importer: importer).padding(.horizontal) }; UndoBanner() }.padding(.bottom, 6)
+                VStack(spacing: 8) {
+                    if importer.isBusy { ImportProgress(importer: importer).padding(.horizontal) }
+                    CaptureBubble(importer: importer)
+                    UndoBanner()
+                }.padding(.bottom, 6)
             }
             .sheet(isPresented: $newBook) { BookEditor() }
             .sheet(isPresented: $searching) { SearchView(importer: importer) }

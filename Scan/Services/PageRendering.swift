@@ -9,11 +9,12 @@ import CoreImage.CIFilterBuiltins
 struct PageSnapshot: Sendable {
     let image: Data
     let drawing: Data
+    var photos: [PagePhoto]
     var rotation: Int
     var adjustments: ImageAdjustments
     let key: String
     init(_ page: NotePage) {
-        image = page.imageData; drawing = page.drawingData; rotation = page.rotation
+        image = page.imageData; drawing = page.drawingData; photos = page.photoLayers; rotation = page.rotation
         adjustments = ImageAdjustments(data: page.enhancementData)
         key = page.id.uuidString + ":" + page.visualVersion.uuidString
     }
@@ -29,8 +30,25 @@ enum PageRendering {
               ] as CFDictionary) else { return nil }
         return UIImage(cgImage: image)
     }
-    static func filteredBase(_ data: Data, adjustments: ImageAdjustments, maximum: Int = 2800) -> UIImage? {
-        guard let source = baseImage(data, maximum: maximum), let cg = source.cgImage else { return nil }
+    static func filteredBase(_ data: Data, adjustments: ImageAdjustments, photos: [PagePhoto] = [], maximum: Int = 2800) -> UIImage? {
+        guard let source = baseImage(data, maximum: maximum) else { return nil }
+        let composed: UIImage
+        if !photos.isEmpty {
+            let format = UIGraphicsImageRendererFormat(); format.scale = 1; format.opaque = true
+            composed = UIGraphicsImageRenderer(size: source.size, format: format).image { _ in
+                source.draw(in: CGRect(origin: .zero, size: source.size))
+                for photo in photos {
+                    guard let inserted = baseImage(photo.data, maximum: maximum) else { continue }
+                    let rect = photo.rect.clamped
+                    let box = CGRect(x: rect.x * source.size.width, y: rect.y * source.size.height,
+                                     width: rect.width * source.size.width, height: rect.height * source.size.height)
+                    let fit = min(box.width / inserted.size.width, box.height / inserted.size.height)
+                    let size = CGSize(width: inserted.size.width * fit, height: inserted.size.height * fit)
+                    inserted.draw(in: CGRect(x: box.midX - size.width / 2, y: box.midY - size.height / 2, width: size.width, height: size.height))
+                }
+            }
+        } else { composed = source }
+        guard let cg = composed.cgImage else { return nil }
         var output = CIImage(cgImage: cg)
         let controls = CIFilter.colorControls()
         controls.inputImage = output
@@ -45,7 +63,7 @@ enum PageRendering {
         return UIImage(cgImage: result)
     }
     static func image(_ page: PageSnapshot, maximum: Int = 2800) -> UIImage? {
-        guard let base = filteredBase(page.image, adjustments: page.adjustments, maximum: maximum) else { return nil }
+        guard let base = filteredBase(page.image, adjustments: page.adjustments, photos: page.photos, maximum: maximum) else { return nil }
         let format = UIGraphicsImageRendererFormat(); format.scale = 1; format.opaque = true
         let full = UIGraphicsImageRenderer(size: base.size, format: format).image { context in
             UIColor.white.setFill(); context.fill(CGRect(origin: .zero, size: base.size))
@@ -90,7 +108,7 @@ actor PageImageRenderer {
         autoreleasepool { PageRendering.image(page, maximum: 1100)?.jpegData(compressionQuality: 0.85) }
     }
     func annotationBase(_ page: PageSnapshot) -> Data? {
-        autoreleasepool { PageRendering.filteredBase(page.image, adjustments: page.adjustments)?.jpegData(compressionQuality: 0.94) }
+        autoreleasepool { PageRendering.filteredBase(page.image, adjustments: page.adjustments, photos: page.photos)?.jpegData(compressionQuality: 0.94) }
     }
     func clear() { cache.removeAllObjects() }
 }

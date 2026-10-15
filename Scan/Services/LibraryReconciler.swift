@@ -5,6 +5,7 @@ import SwiftData
 /// with the same app UUID. Consolidate identifiers and retain competing edits.
 @MainActor enum LibraryReconciler {
     static func run(_ context: ModelContext) throws {
+        try StudyStore.reconcile(context)
         let books = try context.fetch(FetchDescriptor<Notebook>())
         for group in Dictionary(grouping: books, by: \.id).values where group.count > 1 {
             let sorted = group.sorted { $0.modifiedAt > $1.modifiedAt }

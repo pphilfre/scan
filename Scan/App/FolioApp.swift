@@ -9,7 +9,7 @@ import CoreData
     func open(offline: Bool = false) {
         if offline { UserDefaults.standard.set(false, forKey: "iCloudSync") }
         do {
-            let schema = Schema([Notebook.self, BookSection.self, NotePage.self, PageRevision.self, PageLink.self])
+            let schema = Schema([Notebook.self, BookSection.self, NotePage.self, PageRevision.self, PageLink.self, StudyItem.self])
             #if DEBUG
             if UITestFixture.enabled {
                 let config = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true, cloudKitDatabase: .none)
@@ -29,7 +29,7 @@ import CoreData
             try LibraryReconciler.run(opened.mainContext)
             try LibraryPersistence.save(opened.mainContext)
             container = opened
-            UserDefaults.standard.set(3, forKey: "folioStoreFormat")
+            UserDefaults.standard.set(StorageMigration.currentFormat, forKey: "folioStoreFormat")
             error = nil
         } catch { container = nil; self.error = error.localizedDescription }
     }
@@ -40,6 +40,8 @@ import CoreData
     @State private var access = AccessController()
     @State private var actions = LibraryActions()
     @State private var workspace = WorkspaceFolder()
+    @AppStorage("appearanceMode") private var appearanceMode = "system"
+    @AppStorage("accentColor") private var accentColor = "sage"
     @Environment(\.scenePhase) private var scenePhase
     var body: some Scene {
         WindowGroup {
@@ -84,7 +86,8 @@ import CoreData
                         Button("Try again") { storage.open() }
                     }.padding()
                 }
-            }.tint(FolioStyle.ink)
+            }.tint(FolioStyle.color(accentColor))
+                .preferredColorScheme(appearanceMode == "light" ? .light : appearanceMode == "dark" ? .dark : nil)
         }
     }
 }

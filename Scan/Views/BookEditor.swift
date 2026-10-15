@@ -34,7 +34,6 @@ struct BookEditor: View {
                 }
                 Section("Icon") {
                     IconChoices(selection: $symbol)
-                    TextField("SF Symbol name", text: $symbol).textInputAutocapitalization(.never).autocorrectionDisabled()
                 }
             }
             .navigationTitle(book == nil ? "New book" : "Customise book").navigationBarTitleDisplayMode(.inline)

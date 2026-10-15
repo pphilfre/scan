@@ -3,8 +3,8 @@ import UIKit
 
 /// Uses UIKit's native page curl, with a scroll transition when Reduce Motion is enabled.
 struct NativePageTurner: UIViewControllerRepresentable {
-    let pages: [NotePage]
-    @Binding var currentID: UUID
+    let entries: [BookEntry]
+    @Binding var currentID: String
     let reduceMotion: Bool
     var paper: String = "system"
     func makeCoordinator() -> Coordinator { Coordinator(self) }
@@ -13,20 +13,21 @@ struct NativePageTurner: UIViewControllerRepresentable {
         controller.dataSource = context.coordinator
         controller.delegate = context.coordinator
         controller.isDoubleSided = false
-        if let page = pages.first(where: { $0.id == currentID }) { controller.setViewControllers([context.coordinator.controller(page)], direction: .forward, animated: false) }
+        if let entry = entries.first(where: { $0.id == currentID }) { controller.setViewControllers([context.coordinator.controller(entry)], direction: .forward, animated: false) }
         return controller
     }
     func updateUIViewController(_ controller: UIPageViewController, context: Context) {
         context.coordinator.parent = self
-        guard !context.coordinator.turning, let page = pages.first(where: { $0.id == currentID }) else { return }
-        let visible = controller.viewControllers?.first as? PageImageController
-        let revision = page.visualVersion.uuidString
-        if visible?.pageID != page.id || visible?.revision != revision {
-            let oldIndex = pages.firstIndex { $0.id == visible?.pageID } ?? 0
-            let newIndex = pages.firstIndex { $0.id == page.id } ?? 0
-            let animate = visible?.pageID != page.id && !reduceMotion
+        guard !context.coordinator.turning, let entry = entries.first(where: { $0.id == currentID }) else { return }
+        let visible = controller.viewControllers?.first as? ReaderEntryController
+        let revision: String
+        switch entry { case .page(let page): revision = page.visualVersion.uuidString; case .section(let section): revision = section.modifiedAt.description }
+        if visible?.entryID != entry.id || visible?.revision != revision {
+            let oldIndex = entries.firstIndex { $0.id == visible?.entryID } ?? 0
+            let newIndex = entries.firstIndex { $0.id == entry.id } ?? 0
+            let animate = visible?.entryID != entry.id && !reduceMotion
             context.coordinator.turning = animate
-            controller.setViewControllers([context.coordinator.controller(page)], direction: newIndex >= oldIndex ? .forward : .reverse, animated: animate) { _ in
+            controller.setViewControllers([context.coordinator.controller(entry)], direction: newIndex >= oldIndex ? .forward : .reverse, animated: animate) { _ in
                 context.coordinator.turning = false
             }
         }
@@ -35,37 +36,95 @@ struct NativePageTurner: UIViewControllerRepresentable {
         var parent: NativePageTurner
         var turning = false
         init(_ parent: NativePageTurner) { self.parent = parent }
-        func controller(_ page: NotePage) -> PageImageController {
-            PageImageController(pageID: page.id, revision: page.visualVersion.uuidString, snapshot: PageSnapshot(page), paper: parent.paper)
+        func controller(_ entry: BookEntry) -> ReaderEntryController {
+            switch entry {
+            case .page(let page): PageImageController(pageID: page.id, revision: page.visualVersion.uuidString, snapshot: PageSnapshot(page), paper: parent.paper)
+            case .section(let section): DividerImageController(section: section)
+            }
         }
         func pageViewController(_ pageViewController: UIPageViewController, viewControllerBefore viewController: UIViewController) -> UIViewController? { neighbour(viewController, offset: -1) }
         func pageViewController(_ pageViewController: UIPageViewController, viewControllerAfter viewController: UIViewController) -> UIViewController? { neighbour(viewController, offset: 1) }
         private func neighbour(_ controller: UIViewController, offset: Int) -> UIViewController? {
-            guard let current = controller as? PageImageController,
-                  let index = parent.pages.firstIndex(where: { $0.id == current.pageID }),
-                  parent.pages.indices.contains(index + offset) else { return nil }
-            return self.controller(parent.pages[index + offset])
+            guard let current = controller as? ReaderEntryController,
+                  let index = parent.entries.firstIndex(where: { $0.id == current.entryID }),
+                  parent.entries.indices.contains(index + offset) else { return nil }
+            return self.controller(parent.entries[index + offset])
         }
         func pageViewController(_ pageViewController: UIPageViewController, willTransitionTo pendingViewControllers: [UIViewController]) { turning = true }
         func pageViewController(_ pageViewController: UIPageViewController, didFinishAnimating finished: Bool, previousViewControllers: [UIViewController], transitionCompleted completed: Bool) {
             turning = false
-            if completed, let visible = pageViewController.viewControllers?.first as? PageImageController {
-                parent.currentID = visible.pageID
+            if completed, let visible = pageViewController.viewControllers?.first as? ReaderEntryController {
+                parent.currentID = visible.entryID
                 FolioStyle.haptic()
             }
         }
     }
 }
 
-final class PageImageController: UIViewController {
-    let pageID: UUID
+class ReaderEntryController: UIViewController {
+    let entryID: String
     let revision: String
+    init(entryID: String, revision: String) {
+        self.entryID = entryID; self.revision = revision
+        super.init(nibName: nil, bundle: nil)
+    }
+    required init?(coder: NSCoder) { fatalError("Use init(entryID:revision:)") }
+}
+
+final class DividerImageController: ReaderEntryController {
+    let section: BookSection
+    init(section: BookSection) {
+        self.section = section
+        super.init(entryID: "section:" + section.id.uuidString, revision: section.modifiedAt.description)
+    }
+    required init?(coder: NSCoder) { fatalError("Use init(section:)") }
+    override func loadView() {
+        view = UIView()
+        view.backgroundColor = .secondarySystemGroupedBackground
+        let host = UIHostingController(rootView: DividerReaderPage(section: section))
+        addChild(host)
+        host.view.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(host.view)
+        NSLayoutConstraint.activate([
+            host.view.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            host.view.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            host.view.topAnchor.constraint(equalTo: view.topAnchor),
+            host.view.bottomAnchor.constraint(equalTo: view.bottomAnchor)
+        ])
+        host.didMove(toParent: self)
+    }
+}
+
+struct DividerReaderPage: View {
+    let section: BookSection
+    var body: some View {
+        GeometryReader { geometry in
+            VStack(spacing: 22) {
+                Spacer()
+                Image(systemName: section.symbol).font(.system(size: 54, weight: .light))
+                    .frame(width: 108, height: 108)
+                    .background(FolioStyle.color(section.colorName).opacity(0.15), in: RoundedRectangle(cornerRadius: 28))
+                Text(section.title).font(.system(size: 36, weight: .medium, design: .serif)).multilineTextAlignment(.center)
+                Rectangle().fill(FolioStyle.color(section.colorName)).frame(width: 80, height: 4)
+                Spacer()
+            }
+            .foregroundStyle(FolioStyle.color(section.colorName))
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .padding(30)
+            .frame(width: geometry.size.width, height: geometry.size.height)
+            .background(Color(uiColor: .secondarySystemGroupedBackground))
+        }.accessibilityElement(children: .combine).accessibilityLabel("Divider, \(section.title)")
+    }
+}
+
+final class PageImageController: ReaderEntryController {
+    let pageID: UUID
     let snapshot: PageSnapshot
     let paper: String
     private var renderingTask: Task<Void, Never>?
     init(pageID: UUID, revision: String, snapshot: PageSnapshot, paper: String) {
-        self.pageID = pageID; self.revision = revision; self.snapshot = snapshot; self.paper = paper
-        super.init(nibName: nil, bundle: nil)
+        self.pageID = pageID; self.snapshot = snapshot; self.paper = paper
+        super.init(entryID: "page:" + pageID.uuidString, revision: revision)
     }
     required init?(coder: NSCoder) { fatalError("Use init(pageID:revision:snapshot:)") }
     override func loadView() {

@@ -1,6 +1,7 @@
 import SwiftUI
 import SwiftData
 import PencilKit
+import PhotosUI
 
 struct AnnotationEditor: View {
     let page: NotePage
@@ -11,10 +12,16 @@ struct AnnotationEditor: View {
     @Environment(AccessController.self) private var access
     @State private var canvas = PKCanvasView()
     @State private var image: UIImage?
+    @State private var photoSelection: PhotosPickerItem?
+    @State private var placingPhoto = false
+    @State private var photoRect = NormalizedRect(x: 0.15, y: 0.25, width: 0.7, height: 0.5)
+    @State private var photos: [PagePhoto] = []
+    @State private var selectedPhotoID: UUID?
+    @State private var previewVersion = UUID()
     var body: some View {
         NavigationStack {
             Group {
-                if let image { InkCanvas(image: image, canvas: canvas, rotation: page.rotation, adjustments: ImageAdjustments(data: page.enhancementData)) }
+                if let image { InkCanvas(image: image, canvas: canvas, rotation: page.rotation, adjustments: ImageAdjustments(data: page.enhancementData)).id(previewVersion) }
                 else { ProgressView("Opening page…") }
             }
             .background(Color(uiColor: .systemGroupedBackground))
@@ -24,13 +31,28 @@ struct AnnotationEditor: View {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") {
                         guard access.canRead(page) else { return }
-                        actions.edit([page], in: context, name: "Annotate page") { page.drawingData = canvas.drawing.dataRepresentation() }
+                        actions.edit([page], in: context, name: "Annotate page") {
+                            page.drawingData = canvas.drawing.dataRepresentation()
+                            page.photoLayers = photos
+                        }
                         dismiss()
                     }.fontWeight(.semibold).disabled(image == nil)
                 }
                 ToolbarItemGroup(placement: .bottomBar) {
                     Button("Undo", systemImage: "arrow.uturn.backward") { canvas.undoManager?.undo() }
                     Spacer()
+                    PhotosPicker(selection: $photoSelection, matching: .images) {
+                        Label("Add image", systemImage: "photo.badge.plus")
+                    }
+                    if !photos.isEmpty {
+                        Menu("Images", systemImage: "photo.stack") {
+                            ForEach(Array(photos.enumerated()), id: \.element.id) { index, photo in
+                                Button("Position image \(index + 1)", systemImage: "arrow.up.left.and.arrow.down.right") {
+                                    selectedPhotoID = photo.id; photoRect = photo.rect; placingPhoto = true
+                                }
+                            }
+                        }
+                    }
                     Menu("Tools", systemImage: "pencil.tip") {
                         Button("Pen", systemImage: "pencil.tip") { canvas.isRulerActive = false; canvas.tool = PKInkingTool(.pen, color: .black, width: 3) }
                         Button("Highlighter", systemImage: "highlighter") { canvas.isRulerActive = false; canvas.tool = PKInkingTool(.marker, color: .systemYellow, width: 26) }
@@ -43,10 +65,63 @@ struct AnnotationEditor: View {
             }
             .task {
                 canvas.drawing = (try? PKDrawing(data: page.drawingData)) ?? PKDrawing()
-                let data = await PageImageRenderer.shared.annotationBase(PageSnapshot(page))
-                if !Task.isCancelled { image = data.flatMap { UIImage(data: $0) } }
+                photos = page.photoLayers
+                await refreshImage()
+            }
+            .onChange(of: photoSelection) { _, item in
+                guard let item else { return }
+                Task {
+                    do {
+                        guard let source = try await item.loadTransferable(type: Data.self),
+                              let smaller = PageRendering.baseImage(source, maximum: 1800)?.jpegData(compressionQuality: 0.88) else { throw DocumentError.unreadable }
+                        let added = PagePhoto(data: smaller, rect: NormalizedRect(x: 0.15, y: 0.25, width: 0.7, height: 0.5))
+                        photos.append(added)
+                        await refreshImage()
+                        selectedPhotoID = added.id; photoRect = added.rect; placingPhoto = true
+                    } catch { actions.error = error.localizedDescription }
+                    photoSelection = nil
+                }
+            }
+            .sheet(isPresented: $placingPhoto) {
+                NavigationStack {
+                    Form {
+                        Section {
+                            if let photo = photos.first(where: { $0.id == selectedPhotoID }), let preview = UIImage(data: photo.data) {
+                                Image(uiImage: preview).resizable().scaledToFit().frame(maxHeight: 220)
+                                    .frame(maxWidth: .infinity)
+                            }
+                        }
+                        Section("Placement on page") {
+                            LabeledContent("Left to right") { Slider(value: $photoRect.x, in: 0...1) }
+                            LabeledContent("Top to bottom") { Slider(value: $photoRect.y, in: 0...1) }
+                            LabeledContent("Width") { Slider(value: $photoRect.width, in: 0.1...1) }
+                            LabeledContent("Height") { Slider(value: $photoRect.height, in: 0.1...1) }
+                        }
+                        Button("Remove image", role: .destructive) {
+                            photos.removeAll { $0.id == selectedPhotoID }
+                            placingPhoto = false; Task { await refreshImage() }
+                        }
+                    }
+                    .navigationTitle("Position image")
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) { Button("Cancel") { placingPhoto = false } }
+                        ToolbarItem(placement: .confirmationAction) {
+                            Button("Done") {
+                                if let index = photos.firstIndex(where: { $0.id == selectedPhotoID }) { photos[index].rect = photoRect.clamped }
+                                placingPhoto = false; Task { await refreshImage() }
+                            }
+                        }
+                    }
+                }
             }
         }.interactiveDismissDisabled().modifier(PageProtection(page: page))
+    }
+    private func refreshImage() async {
+        var snapshot = PageSnapshot(page)
+        snapshot.photos = photos
+        let data = await PageImageRenderer.shared.annotationBase(snapshot)
+        image = data.flatMap { UIImage(data: $0) }
+        previewVersion = UUID()
     }
 }
 

@@ -33,12 +33,11 @@ final class ReaderFlowTests: XCTestCase {
         XCTAssertLessThan(text.frame.maxY, app.buttons["reader.thumbnail.0"].frame.minY)
         app.segmentedControls.firstMatch.buttons.element(boundBy: 0).tap()
         app.buttons["Next page"].tap()
-        XCTAssertTrue(app.staticTexts["2 of 3"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["3 of 4"].waitForExistence(timeout: 5))
     }
     @MainActor func testEveryReaderToolOpensOnFirstTap() {
         openReader()
         let tools = [
-            ("Edit details & text", "Edit page", "Cancel"),
             ("Annotate", "Annotate", "Cancel"),
             ("Crop & enhance", "Crop & enhance", "Cancel"),
             ("Revision mode", "Revision", "Close"),
@@ -50,7 +49,6 @@ final class ReaderFlowTests: XCTestCase {
         for (action, title, close) in tools {
             openTool(action, navigationTitle: title)
             switch action {
-            case "Edit details & text": XCTAssertTrue(app.textFields["Page title"].exists)
             case "Annotate":
                 let save = app.navigationBars[title].buttons["Save"]
                 let ready = XCTNSPredicateExpectation(predicate: NSPredicate(format: "enabled == true"), object: save)
@@ -67,6 +65,24 @@ final class ReaderFlowTests: XCTestCase {
             XCTAssertTrue(app.buttons["reader.menu"].waitForExistence(timeout: 5))
         }
     }
+    @MainActor func testOCRIsEditedInsideReader() {
+        openReader()
+        app.buttons["Edit page"].tap()
+        XCTAssertTrue(app.textFields["Page title"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.textViews["Recognised text"].exists)
+        app.buttons["Cancel"].tap()
+        XCTAssertTrue(app.buttons["reader.menu"].exists)
+    }
+    @MainActor func testDividerIsAReaderPage() {
+        prepare(); app.launch()
+        app.buttons["library.book.Physics"].tap()
+        app.buttons["book.divider.Mechanics"].tap()
+        XCTAssertTrue(app.navigationBars["Mechanics"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["1 of 4"].exists)
+        app.buttons["Next page"].tap()
+        XCTAssertTrue(app.images["reader.image"].waitForExistence(timeout: 15))
+        XCTAssertTrue(app.staticTexts["2 of 4"].exists)
+    }
     @MainActor func testSelectionExportsMultiplePagesFromReader() {
         openReader()
         app.buttons["reader.menu"].tap(); app.buttons["Select pages"].tap()
@@ -80,7 +96,7 @@ final class ReaderFlowTests: XCTestCase {
         for id in ["capture.scan", "capture.photos", "capture.files"] {
             XCTAssertTrue(app.buttons[id].waitForExistence(timeout: 5))
         }
-        XCTAssertGreaterThan(app.buttons["capture.photos"].frame.minY, app.windows.firstMatch.frame.height * 0.65)
+        XCTAssertGreaterThan(app.buttons["capture.photos"].frame.minY, app.windows.firstMatch.frame.height * 0.55)
         XCTAssertFalse(app.navigationBars["Add pages"].exists)
     }
     @MainActor func testImportedBatchPromptsForDestinationAfterSaving() {

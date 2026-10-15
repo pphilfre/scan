@@ -19,6 +19,14 @@ import UIKit
             context.insert(page)
             context.insert(PageRevision(page: page, reason: "Original scan"))
         }
+        if ProcessInfo.processInfo.arguments.contains("-ui-study") {
+            var records = StudyInterchange.parse(StudyInterchange.example).records
+            for index in records.indices {
+                if records[index].type == .paper { records[index].setIDs("pages", book.orderedPages.map(\.id)) }
+                if records[index].id == "quadratics" { records[index].setIDs("noteBooks", [book.id]) }
+            }
+            try StudyStore.write(records, context: context)
+        }
         try LibraryPersistence.save(context)
     }
     static func imageData() -> Data {

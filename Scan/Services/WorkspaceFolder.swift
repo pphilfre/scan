@@ -53,7 +53,7 @@ struct LinkArchive: Codable, Sendable {
     init(_ link: PageLink) { id = link.id; source = link.sourceID; target = link.targetID; created = link.createdAt; removed = link.removedAt }
 }
 struct FolderManifest: Codable, Sendable {
-    var format = 2
+    var format = 3
     var savedAt = Date()
     var books: [BookArchive]
     var sections: [SectionArchive]
@@ -61,6 +61,9 @@ struct FolderManifest: Codable, Sendable {
     var pageRecords: [String: String]
     var revisions: [UUID]
     var links: [LinkArchive]
+    // Optional to decode folders saved before study tools existed. Format 3
+    // prevents older apps from silently overwriting these records.
+    var study: [StudySnapshot]? = nil
 }
 
 enum WorkspaceError: LocalizedError {
@@ -91,7 +94,7 @@ actor FolderArchive {
         let path = root(folder).appending(path: "Library.json")
         guard FileManager.default.fileExists(atPath: path.path) else { return nil }
         let result = try JSONDecoder().decode(FolderManifest.self, from: read(path))
-        guard result.format == 2 else { throw WorkspaceError.unsupported }
+        guard [2, 3].contains(result.format) else { throw WorkspaceError.unsupported }
         return result
     }
     func prepare(_ folder: URL) throws {
@@ -248,6 +251,9 @@ private final class FolderAccess {
         guard !busy else { return }
         busy = true; defer { busy = false; restoring = false }
         let access = FolderAccess(url)
+        // Check write access while the picker-provided security scope is open.
+        // A failed first save must leave the existing connection untouched.
+        try await FolderArchive.shared.prepare(url)
         pageCache.removeAll()
         let manifest = try await FolderArchive.shared.manifest(in: url)
         if let manifest {
@@ -260,11 +266,13 @@ private final class FolderAccess {
             context.autosaveEnabled = autosave
             expectedDate = manifest.savedAt; lastSaved = manifest.savedAt
         } else { expectedDate = nil }
-        let bookmark = try url.bookmarkData(options: [.minimalBookmark], includingResourceValuesForKeys: nil, relativeTo: nil)
+        // A minimal bookmark omits the security scope needed after relaunch.
+        let bookmark = try url.bookmarkData(options: [], includingResourceValuesForKeys: nil, relativeTo: nil)
         UserDefaults.standard.set(bookmark, forKey: "workspaceBookmark")
         UserDefaults.standard.set(url.lastPathComponent, forKey: "workspaceName")
         folderAccess = access
         folder = url; folderName = url.lastPathComponent
+        error = nil
         LibraryPersistence.observe(self, context: context)
         dirty = true
         // Save immediately after attach/restore, without requiring another edit.
@@ -330,11 +338,12 @@ private final class FolderAccess {
                 if !savedRevisions.contains(id) { try await FolderArchive.shared.writeRevision(RevisionArchive(revision), folder: folder) }
                 revisionIDs.append(id)
             }
-            let index = FolderManifest(books: books.sorted { $0.id.uuidString < $1.id.uuidString },
+            var index = FolderManifest(books: books.sorted { $0.id.uuidString < $1.id.uuidString },
                 sections: sections.sorted { $0.id.uuidString < $1.id.uuidString },
                 pages: records.keys.compactMap { UUID(uuidString: $0) }.sorted { $0.uuidString < $1.uuidString }, pageRecords: records,
                 revisions: revisionIDs.sorted { $0.uuidString < $1.uuidString },
                 links: links.sorted { $0.id.uuidString < $1.id.uuidString })
+            index.study = try StudyStore.items(context).map { try $0.snapshot() }.sorted { $0.record.id < $1.record.id }
             var unchanged = false
             if let remote {
                 var comparable = index; comparable.savedAt = remote.savedAt
@@ -393,6 +402,7 @@ private final class FolderAccess {
                 link.id = archived.id; link.createdAt = archived.created; link.removedAt = archived.removed; context.insert(link)
             }
         }
+        try StudyStore.merge(manifest.study ?? [], context: context)
         do { try LibraryReconciler.run(context); try LibraryPersistence.save(context) } catch { context.rollback(); throw error }
     }
 }

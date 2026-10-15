@@ -5,6 +5,7 @@ struct SectionEditor: View {
     let book: Notebook
     var section: BookSection?
     var initialParent: UUID?
+    var initialBeforeID: String?
     @Environment(\.modelContext) private var context
     @Environment(\.dismiss) private var dismiss
     @Environment(LibraryActions.self) private var actions
@@ -28,8 +29,10 @@ struct SectionEditor: View {
                         ForEach(parents) { Text(String(repeating: "  ", count: book.depth(of: $0)) + $0.title).tag(Optional($0.id)) }
                     }
                     Picker("Insert before", selection: $beforeID) {
-                        Text("End of section").tag(nil as String?)
-                        ForEach(book.activeSections.filter { $0.parentID == parent && $0.id != section?.id }) { Text($0.title).tag(Optional("section:" + $0.id.uuidString)) }
+                        Text("End of book").tag(nil as String?)
+                        ForEach(book.entries.filter { $0.id != "section:" + (section?.id.uuidString ?? "") }) { entry in
+                            Text(entry.title).tag(Optional(entry.id))
+                        }
                     }
                     Picker("Style", selection: $style) { Text("Tab").tag("tab"); Text("Band").tag("band"); Text("Minimal").tag("minimal") }
                 }
@@ -43,6 +46,7 @@ struct SectionEditor: View {
             }
             .onAppear {
                 parent = section?.parentID ?? initialParent
+                beforeID = initialBeforeID
                 if let section { title = section.title; color = section.colorName; symbol = section.symbol; style = section.dividerStyle }
                 else { color = book.colorName }
             }
@@ -95,12 +99,12 @@ struct SectionTabs: View {
                 ForEach(book.activeSections) { section in
                     Button { jump(section); FolioStyle.haptic() } label: {
                         Image(systemName: section.symbol).font(.system(size: 13, weight: .medium))
-                            .foregroundStyle(.white).frame(width: 32, height: 44)
+                            .foregroundStyle(.white).frame(width: 48, height: 52)
                             .background(FolioStyle.color(section.colorName).gradient, in: UnevenRoundedRectangle(topLeadingRadius: 7, bottomLeadingRadius: 7))
-                    }.buttonStyle(.plain).accessibilityLabel("Jump to \(section.title)")
+                    }.buttonStyle(.plain).contentShape(Rectangle()).accessibilityLabel("Jump to \(section.title)")
                         .contextMenu { Text(section.title) }
                 }
             }.padding(.vertical, 8)
-        }.frame(width: 33).fixedSize(horizontal: true, vertical: false)
+        }.frame(width: 49).fixedSize(horizontal: true, vertical: false)
     }
 }

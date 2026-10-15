@@ -36,6 +36,12 @@ struct NormalizedRect: Codable, Equatable, Sendable {
     func clockwise() -> Self { Self(x: 1 - y - height, y: x, width: height, height: width).clamped }
 }
 
+struct PagePhoto: Codable, Equatable, Identifiable, Sendable {
+    var id = UUID()
+    var data: Data
+    var rect: NormalizedRect
+}
+
 struct ImageAdjustments: Codable, Equatable, Sendable {
     var crop = NormalizedRect()
     var straighten: Double = 0
@@ -65,6 +71,7 @@ struct PageState: Codable, Sendable {
     var favourite: Bool
     var bookmarked: Bool
     var drawing: Data
+    var photos: [PagePhoto]?
     var enhancements: Data
     var covers: Data
     var trashedAt: Date?
@@ -72,12 +79,14 @@ struct PageState: Codable, Sendable {
         title = page.title; text = page.text; tags = page.tags; bookID = page.book?.id
         sectionID = page.sectionID; rank = page.rank; rotation = page.rotation
         favourite = page.isFavourite; bookmarked = page.isBookmarked; drawing = page.drawingData
+        photos = page.photoLayers
         enhancements = page.enhancementData; covers = page.revisionCoverData; trashedAt = page.trashedAt
     }
     @MainActor func apply(to page: NotePage, in context: ModelContext) {
         page.title = title; page.text = text; page.tags = tags; page.sectionID = sectionID
         page.rank = rank; page.rotation = rotation; page.isFavourite = favourite
         page.isBookmarked = bookmarked; page.drawingData = drawing; page.enhancementData = enhancements
+        page.photoLayers = photos ?? []
         page.revisionCoverData = covers; page.trashedAt = trashedAt
         if page.book?.id != bookID {
             page.book = (try? context.fetch(FetchDescriptor<Notebook>()))?.first { $0.id == bookID }

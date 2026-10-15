@@ -31,7 +31,7 @@ import Observation
         for page in pages { context.insert(PageRevision(page: page, reason: "Before " + name.lowercased())) }
         mutation()
         for (page, state) in previous {
-            if page.rotation != state.rotation || page.drawingData != state.drawing || page.enhancementData != state.enhancements { page.visualVersion = UUID() }
+            if page.rotation != state.rotation || page.drawingData != state.drawing || page.enhancementData != state.enhancements || page.photoLayers != (state.photos ?? []) { page.visualVersion = UUID() }
             page.modifiedAt = .now
             context.insert(PageRevision(page: page, reason: name))
         }

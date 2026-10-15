@@ -10,6 +10,8 @@ struct EnhancementEditor: View {
     @State private var adjustments = ImageAdjustments()
     @State private var preview: UIImage?
     @State private var ready = false
+    @State private var renderingPreview = false
+    @State private var needsPreview = false
     private var allowed: Bool { pages.allSatisfy(access.canRead) }
     var body: some View {
         NavigationStack {
@@ -52,19 +54,31 @@ struct EnhancementEditor: View {
                     }.disabled(!ready || !allowed)
                 }
             }
-            .onAppear { adjustments = pages.first.map { ImageAdjustments(data: $0.enhancementData) } ?? ImageAdjustments(); ready = true }
-            .task(id: previewKey) {
-                guard ready, allowed, let page = pages.first else { return }
-                do { try await Task.sleep(for: .milliseconds(120)) } catch { return }
-                var snapshot = PageSnapshot(page)
-                snapshot.adjustments = adjustments; snapshot.adjustments.crop = NormalizedRect(); snapshot.rotation = 0
-                let data = await PageImageRenderer.shared.preview(snapshot)
-                guard !Task.isCancelled else { return }
-                preview = data.flatMap { UIImage(data: $0) }
+            .onAppear {
+                adjustments = pages.first.map { ImageAdjustments(data: $0.enhancementData) } ?? ImageAdjustments()
+                ready = true; renderPreview()
             }
+            .onChange(of: previewKey) { _, _ in renderPreview() }
         }
     }
     private var previewKey: String { "\(ready)-\(adjustments.straighten)-\(adjustments.brightness)-\(adjustments.contrast)-\(adjustments.filter)" }
+    private func renderPreview() {
+        guard ready, allowed, pages.first != nil else { return }
+        needsPreview = true
+        guard !renderingPreview else { return }
+        renderingPreview = true
+        Task {
+            while needsPreview, let page = pages.first {
+                needsPreview = false
+                var snapshot = PageSnapshot(page)
+                snapshot.adjustments = adjustments; snapshot.adjustments.crop = NormalizedRect(); snapshot.rotation = 0
+                let data = await PageImageRenderer.shared.preview(snapshot)
+                guard !Task.isCancelled else { break }
+                preview = data.flatMap { UIImage(data: $0) }
+            }
+            renderingPreview = false
+        }
+    }
     private func cropSlider(_ title: String, keyPath: WritableKeyPath<NormalizedRect, Double>, range: ClosedRange<Double>) -> some View {
         LabeledContent(title) {
             Slider(value: Binding(get: { adjustments.crop[keyPath: keyPath] }, set: { value in

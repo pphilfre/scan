@@ -15,7 +15,7 @@ struct BookView: View {
     @State private var bookSheet: BookSheet?
     @State private var editBook = false
     @State private var organiser = false
-    @State private var selectedPage: NotePage?
+    @State private var selectedEntry: BookEntry?
     @State private var deleting = false
     @State private var share: ExportFile?
     @State private var exporting = false
@@ -40,14 +40,17 @@ struct BookView: View {
             switch item.kind {
             case .capture: CaptureView(importer: importer, initialBook: book, beforeEntryID: item.before)
             case .paper: TemplatePicker(book: book, beforeEntryID: item.before)
-            case .divider: SectionEditor(book: book, section: item.section, initialParent: item.parent)
+            case .divider: SectionEditor(book: book, section: item.section, initialParent: item.parent, initialBeforeID: item.before)
             }
         }
         .sheet(isPresented: $exportSections) { SectionExportPicker(book: book) }
         .sheet(isPresented: $editBook) { BookEditor(book: book) }
         .sheet(isPresented: $organiser) { NavigationStack { PageOrganiser(book: book, importer: importer) } }
         .sheet(item: $share) { ShareSheet(items: [$0.url]) }
-        .fullScreenCover(item: $selectedPage) { page in PageReader(pages: book.orderedPages, initialID: page.id, importer: importer) }
+        .fullScreenCover(item: $selectedEntry) { entry in
+            PageReader(pages: book.orderedPages, initialID: book.orderedPages.first?.id ?? UUID(), importer: importer,
+                       bookEntries: book.entries, initialEntryID: entry.id)
+        }
         .confirmationDialog("Move this book to Recently Deleted?", isPresented: $deleting, titleVisibility: .visible) {
             Button("Delete book", role: .destructive) { actions.trashBook(book, context: context); dismiss() }
         }
@@ -64,6 +67,10 @@ struct BookView: View {
                         ContentUnavailableView("No pages yet", systemImage: "book.pages", description: Text("Scan a note or add a paper template."))
                     }
                     if filter == "all" {
+                        HStack(spacing: 10) {
+                            Button("New paper page", systemImage: "square.and.pencil") { bookSheet = BookSheet(kind: .paper) }
+                            Button("Add divider", systemImage: "rectangle.split.1x2") { bookSheet = BookSheet(kind: .divider) }
+                        }.font(.subheadline).buttonStyle(.glass)
                         pageGroup(book.orderedPages.filter { $0.sectionID == nil })
                         ForEach(book.activeSections) { section in
                             VStack(alignment: .leading, spacing: 12) {
@@ -90,6 +97,7 @@ struct BookView: View {
             VStack(spacing: 8) {
                 if importer.isBusy { ImportProgress(importer: importer).padding(.horizontal) }
                 if exporting { ProgressView("Exporting…").font(.caption) }
+                CaptureBubble(importer: importer, book: book)
                 UndoBanner()
             }.padding(.bottom, 6)
         }
@@ -108,11 +116,6 @@ struct BookView: View {
                 Button("Delete book", systemImage: "trash", role: .destructive) { deleting = true }
             } label: { Image(systemName: "ellipsis") }
         }
-        ToolbarItem(placement: .bottomBar) {
-            Button { bookSheet = BookSheet(kind: .capture) } label: {
-                Label("Add page", systemImage: "plus").padding(.horizontal, 18).padding(.vertical, 5)
-            }.buttonStyle(.glassProminent).disabled(importer.isBusy)
-        }
     }
     @ViewBuilder private func pageGroup(_ pages: [NotePage]) -> some View {
         if layout == "list" {
@@ -124,18 +127,18 @@ struct BookView: View {
         }
     }
     private func cell(_ page: NotePage, grid: Bool) -> some View {
-        Button { selectedPage = page } label: {
+        Button { selectedEntry = .page(page) } label: {
             Group {
                 if grid {
                     VStack(alignment: .leading, spacing: 7) {
                         PageThumbnail(page: page).aspectRatio(0.72, contentMode: .fit).clipShape(RoundedRectangle(cornerRadius: 5)).shadow(color: .black.opacity(0.06), radius: 3, y: 2)
                         HStack(spacing: 4) {
-                            if showNumbers { Text("\((book.orderedPages.firstIndex { $0.id == page.id } ?? 0) + 1)").foregroundStyle(.secondary) }
+                            if showNumbers { Text("\((book.entries.firstIndex { $0.id == "page:" + page.id.uuidString } ?? 0) + 1)").foregroundStyle(.secondary) }
                             Text(page.title).lineLimit(1)
                             if page.isBookmarked { Image(systemName: "bookmark.fill").foregroundStyle(FolioStyle.ink) }
                         }.font(.caption2)
                     }
-                } else { PageRow(page: page, number: showNumbers ? book.orderedPages.firstIndex(where: { $0.id == page.id }).map { $0 + 1 } : nil) }
+                } else { PageRow(page: page, number: showNumbers ? book.entries.firstIndex(where: { $0.id == "page:" + page.id.uuidString }).map { $0 + 1 } : nil) }
             }.contentShape(Rectangle())
         }.buttonStyle(.plain).accessibilityIdentifier("book.page." + page.title)
         .draggable("page:" + page.id.uuidString)
@@ -146,6 +149,12 @@ struct BookView: View {
         .contextMenu {
             Button("Insert before", systemImage: "plus") { bookSheet = BookSheet(kind: .capture, before: "page:" + page.id.uuidString) }
             Button("Insert paper before", systemImage: "document.badge.plus") { bookSheet = BookSheet(kind: .paper, before: "page:" + page.id.uuidString) }
+            Button("Add divider before", systemImage: "rectangle.split.1x2") {
+                bookSheet = BookSheet(kind: .divider, before: "page:" + page.id.uuidString, parent: book.activeSections.first { $0.id == page.sectionID }?.parentID)
+            }
+            Button("Add divider after", systemImage: "rectangle.split.1x2") {
+                bookSheet = BookSheet(kind: .divider, before: entryAfter(page), parent: book.activeSections.first { $0.id == page.sectionID }?.parentID)
+            }
             Button(page.isBookmarked ? "Remove bookmark" : "Bookmark", systemImage: "bookmark") { actions.edit([page], in: context, name: "Bookmark") { page.isBookmarked.toggle() } }
             Button("Duplicate", systemImage: "plus.square.on.square") { actions.duplicate([page], in: context) }
             Button("Rotate", systemImage: "rotate.right") { actions.rotate([page], in: context) }
@@ -153,14 +162,19 @@ struct BookView: View {
         }
     }
     private func divider(_ section: BookSection) -> some View {
-        HStack(spacing: 10) {
-            Image(systemName: section.symbol)
-            Text(section.title).font(.system(.headline, design: .serif))
-            Spacer()
-            Text("\(book.pages(in: section).count)").font(.caption).foregroundStyle(.secondary)
+        Button { selectedEntry = .section(section) } label: {
+            HStack(spacing: 10) {
+                Image(systemName: section.symbol)
+                Text(section.title).font(.system(.headline, design: .serif))
+                Spacer()
+                Text("\(book.pages(in: section).count)").font(.caption).foregroundStyle(.secondary)
+            }
+            .padding(.leading, CGFloat(book.depth(of: section) * 14)).padding(.horizontal, 12)
+            .frame(minHeight: 64).contentShape(Rectangle())
         }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("book.divider." + section.title)
         .foregroundStyle(FolioStyle.color(section.colorName))
-        .padding(.leading, CGFloat(book.depth(of: section) * 14)).padding(12)
         .background(section.dividerStyle == "band" ? FolioStyle.color(section.colorName).opacity(0.12) : .clear, in: RoundedRectangle(cornerRadius: 8))
         .overlay(alignment: .bottom) { if section.dividerStyle != "band" { Rectangle().fill(FolioStyle.color(section.colorName).opacity(0.3)).frame(height: section.dividerStyle == "minimal" ? 1 : 3) } }
         .draggable("section:" + section.id.uuidString)
@@ -178,6 +192,11 @@ struct BookView: View {
             Button("Export section", systemImage: "square.and.arrow.up") { export(book.pages(in: section), title: section.title) }.disabled(book.pages(in: section).isEmpty)
             Button("Remove divider", systemImage: "trash", role: .destructive) { actions.removeSection(section, context: context) }
         }
+    }
+    private func entryAfter(_ page: NotePage) -> String? {
+        let entries = book.entries
+        guard let index = entries.firstIndex(where: { $0.id == "page:" + page.id.uuidString }), entries.indices.contains(index + 1) else { return nil }
+        return entries[index + 1].id
     }
     private func toggleLock() {
         Task {

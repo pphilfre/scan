@@ -2,6 +2,18 @@
 
 A native iOS 26 notebook for iPhone and iPad, built with SwiftUI, Liquid Glass, VisionKit, Vision, SwiftData, PencilKit, PDFKit, Core Image, LocalAuthentication, WidgetKit and App Intents. No third-party runtime dependencies or remote OCR services.
 
+## A level study
+
+The Library has **Course maps**, **Past Papers**, **Flashcards & review**, and **Mistakes**, alongside your existing books. Start with a paper or a few cards; a course map is optional.
+
+- Create subjects, topics and nested subtopics. Each topic brings together linked books, dividers, note pages, questions, mistakes and cards. Confidence is self-assessed, with new topics shown as opportunities to explore.
+- Scan or import complete papers independently of topics, attach mark schemes, and open their ordered scans in the existing reader for annotations. Add questions/subquestions, scan ranges, working, corrections, feedback and marks. Paper, section and parent totals count leaf marks once. Search/filter by subject, board, year, topic, score and further practice.
+- Record mistakes and retry them as resolved or still practising. Create editable cards manually or from a note's reader menu, question or mistake. Review prompt → reveal → Again/Nearly/Got it; scheduling has no missed-day penalties.
+- Start a study session from a subject, topic or paper, review cards, practise, mark and see a concise summary with a next step. Study haptics use restrained system feedback and can be disabled in Settings; Reduce Motion also mutes them.
+- Paste structured data from an external AI, validate it, inspect its fields, choose skip/update/new for duplicates, and confirm a final summary. Import metadata/questions separately from scans, and copy/export study data with the same versioned JSON format. **Copy prompt for AI** includes the full field contract and example. See [the format and examples](docs/study-format.md).
+
+Study records, practice events, edit history and deletion markers are included in working-folder saves and merges. Manifest format 3 reads older format 2 folders; older apps cannot overwrite the new format. JSON study export contains scan references; the working folder remains the complete backup of images and ink.
+
 ## Working folder and LiveContainer
 
 **Settings → Working folder → Choose working folder…** opens the native Files folder picker. Choose a durable location **outside Folio’s/LiveContainer’s disposable app container**. Folio creates a `Folio Library` subfolder there and automatically saves its portable library after changes, including imports while sheets are open. Original images use their normal file extensions in `Folio Library/originals`; folder access stays open while connected.
@@ -17,17 +29,17 @@ Keep the folder available offline in Files. If another container changes its ind
 - Colours, two-colour gradients, linen/paper/ruled finishes, SF Symbols and spine labels.
 - Physical coloured edge tabs jump between dividers. Nested sections support parent selection, colours, icons, divider styles and ordering; section exports include descendants.
 - Configurable bookshelf and thumbnail sizes, grid/list layouts, reading background, page numbers, thumbnail strip and page-turn animations.
-- A compact camera/photos/files toolbar starts capture. Native scanning supports continuous multi-page batches; originals are saved into Unfiled before a destination/position prompt appears. Photo/PDF import, paper insertion and scans can target any position.
+- A bottom plus expands into camera, photos and files glass buttons. Native scanning supports continuous multi-page batches; originals are saved into Unfiled before a destination/position prompt appears. Photo/PDF import, paper insertion and scans can target any position.
 - Dedicated organiser with drag-and-drop, native list reordering, multi-selection, batch rename/tags, duplication, rotation, crop/enhancement, movement, export and deletion.
 - Recoverable deletion, persistent Recently Deleted and a 20-command in-session undo history. Page edits retain immutable version records; sync duplicates are reconciled without discarding competing edits or different originals.
 
 ## Reading and editing
 
-- Native page curls, swipe navigation, pinch/double-tap zoom, full screen, a fixed-height thumbnail strip with multi-page PDF sharing, bookmarks and recently viewed pages within books.
+- Native page curls, swipe navigation through pages and dividers, pinch/double-tap zoom, full screen, a fixed-height thumbnail strip with multi-page PDF sharing, bookmarks and recently viewed pages within books.
 - Accurate language-aware Vision OCR, editable/searchable text and automatic titles/date/section suggestions. Interrupted recognition resumes; the original is saved first.
 - PencilKit pen, highlighter, eraser, ruler-assisted underline and undo/redo. Ink remains separate and aligns with crop, straightening and rotation.
 - Non-destructive crop, straightening, brightness, contrast and colour/grey/ink/warm filters.
-- Blank, lined, squared, dotted and graph paper templates.
+- Blank, lined, squared, dotted and graph paper templates. Each paper page supports PencilKit ink and multiple positioned images, kept as editable layers over the original paper.
 - Revision mode with movable/resizable answer covers, individual reveal, reveal/hide all and persistent cover positions.
 - Related-page links across books store identifiers without duplicating images.
 - PDF export for individual/selected pages, multiple sections or a complete book. Export reads originals in short-lived contexts, rendering one page at a time. PDFs contain visible scans and ink; OCR text stays editable in Folio.
