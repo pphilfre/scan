@@ -2,7 +2,7 @@
 set -euo pipefail
 mkdir -p build
 simulator_arch="$(uname -m)"
-test_scope=()
+test_scope=(-only-testing:FolioTests -only-testing:FolioUITests)
 case "${FOLIO_TEST_SUITE:-all}" in
   all) ;;
   core) test_scope=(-skip-testing:FolioUITests/StudyFlowTests) ;;
