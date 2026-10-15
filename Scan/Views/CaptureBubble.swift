@@ -78,7 +78,7 @@ struct CaptureBubble: View {
         Button(action: action) { sourceLabel(title, icon: icon) }
             .buttonStyle(.plain).accessibilityIdentifier(id)
     }
-    private func sourceLabel(_ title: String, icon: String) -> some View {
+    nonisolated private func sourceLabel(_ title: String, icon: String) -> some View {
         VStack(spacing: 4) {
             Image(systemName: icon).font(.title3)
             Text(title).font(.caption2.weight(.medium))

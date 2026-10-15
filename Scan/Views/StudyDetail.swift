@@ -343,6 +343,6 @@ struct StudyDetailView: View {
         var event = StudyRecord(.attempt, ["mistake": mistake.id, "resolved": changed["resolved"], "date": ISO8601DateFormatter().string(from: .now)])
         event["session"] = sessionID ?? ""
         do { try StudyStore.write([changed, event], context: context); notice = resolved ? "Retry saved · Resolved" : "Retry saved · Try again tomorrow"; feedback.success += 1 }
-        catch { error = error.localizedDescription; feedback.error += 1 }
+        catch { self.error = error.localizedDescription; feedback.error += 1 }
     }
 }
