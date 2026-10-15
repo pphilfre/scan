@@ -51,7 +51,6 @@ struct CaptureBubble: View {
             .accessibilityLabel(expanded ? "Close capture actions" : "Add pages")
             .accessibilityIdentifier("library.addPages")
         }
-        .accessibilityIdentifier("capture.bubble")
         .sheet(isPresented: $scanner) {
             ScannerView { images in
                 importer.importScans(images, into: nil, context: context, completion: { captured($0) })

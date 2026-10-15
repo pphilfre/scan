@@ -47,9 +47,15 @@ jobs:
           path: build/device-build.log
           retention-days: 7
   tests:
-    name: Simulator tests
+    name: Simulator tests (${{ matrix.suite }})
     runs-on: macos-26
     timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        suite: [core, study]
+    env:
+      FOLIO_TEST_SUITE: ${{ matrix.suite }}
     steps:
       - uses: actions/checkout@v5
       - name: Prepare Xcode and project
@@ -67,7 +73,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: simulator-results
+          name: simulator-results-${{ matrix.suite }}
           path: |
             build/*.log
             build/Tests.xcresult

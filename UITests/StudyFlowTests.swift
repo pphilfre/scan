@@ -57,7 +57,7 @@ final class StudyFlowTests: XCTestCase {
         XCTAssertTrue(earned.waitForExistence(timeout: 5))
         earned.tap(); earned.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: 8) + "3")
         app.buttons["study.save"].tap()
-        let retry = app.buttons["Retry tomorrow"]
+        let retry = app.sheets.buttons["Retry tomorrow"].firstMatch
         XCTAssertTrue(retry.waitForExistence(timeout: 5))
         retry.tap()
         XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "3 / 3 marks")).firstMatch.exists)

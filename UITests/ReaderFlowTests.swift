@@ -86,7 +86,7 @@ final class ReaderFlowTests: XCTestCase {
     @MainActor func testSelectionExportsMultiplePagesFromReader() {
         openReader()
         app.buttons["reader.menu"].tap(); app.buttons["Select pages"].tap()
-        app.buttons["reader.thumbnail.1"].tap()
+        app.buttons["reader.thumbnail.2"].tap()
         let share = app.buttons["reader.exportSelection"]
         XCTAssertTrue(share.label.contains("2")); share.tap()
         XCTAssertTrue(app.buttons["Copy"].waitForExistence(timeout: 15), "Native PDF share sheet must open")

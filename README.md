@@ -63,7 +63,7 @@ xcodegen generate --spec project.yml
 open Folio.xcodeproj
 ```
 
-CI follows `pphilfre/mail`: **macos-26 / Xcode 26.6**, no package or simulator downloads. Device IPA and simulator tests run concurrently with 15-minute caps. Simulator discovery/boot occurs alongside generic simulator compilation; tests run without rebuilding. Stale runs are cancelled and module caches/logs are retained.
+CI follows `pphilfre/mail`: **macos-26 / Xcode 26.6**, no package or simulator downloads. Device IPA and the core/study simulator suites run concurrently with 15-minute caps. Separate simulator suites give study UI tests their own time budget when a cold simulator boots slowly. Simulator discovery/boot occurs alongside generic simulator compilation; tests run without rebuilding. Stale runs are cancelled and module caches/logs are retained.
 
 [Builds and IPA downloads](https://github.com/pphilfre/scan/actions/workflows/ios.yml)
 

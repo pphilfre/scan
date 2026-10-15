@@ -2,6 +2,13 @@
 set -euo pipefail
 mkdir -p build
 simulator_arch="$(uname -m)"
+test_scope=()
+case "${FOLIO_TEST_SUITE:-all}" in
+  all) ;;
+  core) test_scope=(-skip-testing:FolioUITests/StudyFlowTests) ;;
+  study) test_scope=(-only-testing:FolioUITests/StudyFlowTests) ;;
+  *) echo "Unknown FOLIO_TEST_SUITE" >&2; exit 1 ;;
+esac
 # Starting CoreSimulator can take minutes on a cold runner. Keep all of its
 # discovery and boot commands off the compilation path, not just bootstatus.
 (
@@ -24,4 +31,5 @@ simulator_id="$(cat build/simulator-id.txt)"
 xcodebuild -project Folio.xcodeproj -scheme Folio -configuration Debug \
   -destination "platform=iOS Simulator,id=$simulator_id,arch=$simulator_arch" -derivedDataPath build/Simulator \
   -resultBundlePath build/Tests.xcresult -parallel-testing-enabled NO \
+  "${test_scope[@]}" \
   CODE_SIGNING_ALLOWED=NO test-without-building 2>&1 | tee build/tests.log
