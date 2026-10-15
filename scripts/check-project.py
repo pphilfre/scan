@@ -11,6 +11,11 @@ workflow = yaml.load((root / '.github/workflows/ios.yml').read_text(), Loader=ya
 assert project['options']['deploymentTarget']['iOS'] == '26.0'
 assert 'packages' not in project, 'App should have no package dependencies'
 assert project['targets']['FolioTests']['dependencies'] == [{'target': 'Folio'}]
+assert project['targets']['Folio']['dependencies'] == [{'target': 'FolioWidgets', 'embed': True}]
+assert project['targets']['FolioWidgets']['type'] == 'app-extension'
+assert project['targets']['FolioWidgets']['info']['properties']['NSExtension']['NSExtensionPointIdentifier'] == 'com.apple.widgetkit-extension'
+assert project['targets']['Folio']['info']['properties']['CFBundleURLTypes'][0]['CFBundleURLSchemes'] == ['folio']
+assert 'INFOPLIST_KEY_NSFaceIDUsageDescription' in project['targets']['Folio']['settings']['base']
 assert set(workflow['jobs']) == {'device', 'tests'}
 assert set(workflow['on']['push']['branches']) == {'main', 'work'}
 for job in workflow['jobs'].values():
@@ -26,5 +31,5 @@ container = entitlements['com.apple.developer.icloud-container-identifiers'][0]
 for path in ['Scan/App/FolioApp.swift', 'Scan/Views/SettingsView.swift']:
     assert container in (root / path).read_text(), f'Cloud container mismatch in {path}'
 assert (root / 'Scan/Resources/Assets.xcassets/AppIcon.appiconset/AppIcon.png').is_file()
-subprocess.run(['git', 'diff', '--check'], cwd=root, check=True)
+subprocess.run(['git', 'diff', '--check', 'HEAD'], cwd=root, check=True)
 print('Project, workflow, entitlements, asset JSON and shell checks passed.')

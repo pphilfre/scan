@@ -6,6 +6,7 @@ struct NativePageTurner: UIViewControllerRepresentable {
     let pages: [NotePage]
     @Binding var currentID: UUID
     let reduceMotion: Bool
+    var paper: String = "system"
     func makeCoordinator() -> Coordinator { Coordinator(self) }
     func makeUIViewController(context: Context) -> UIPageViewController {
         let controller = UIPageViewController(transitionStyle: reduceMotion ? .scroll : .pageCurl, navigationOrientation: .horizontal)
@@ -19,7 +20,7 @@ struct NativePageTurner: UIViewControllerRepresentable {
         context.coordinator.parent = self
         guard !context.coordinator.turning, let page = pages.first(where: { $0.id == currentID }) else { return }
         let visible = controller.viewControllers?.first as? PageImageController
-        let revision = "\(page.rotation):\(page.drawingData.hashValue)"
+        let revision = page.visualVersion.uuidString
         if visible?.pageID != page.id || visible?.revision != revision {
             let oldIndex = pages.firstIndex { $0.id == visible?.pageID } ?? 0
             let newIndex = pages.firstIndex { $0.id == page.id } ?? 0
@@ -35,7 +36,7 @@ struct NativePageTurner: UIViewControllerRepresentable {
         var turning = false
         init(_ parent: NativePageTurner) { self.parent = parent }
         func controller(_ page: NotePage) -> PageImageController {
-            PageImageController(pageID: page.id, revision: "\(page.rotation):\(page.drawingData.hashValue)", snapshot: PageSnapshot(page))
+            PageImageController(pageID: page.id, revision: page.visualVersion.uuidString, snapshot: PageSnapshot(page), paper: parent.paper)
         }
         func pageViewController(_ pageViewController: UIPageViewController, viewControllerBefore viewController: UIViewController) -> UIViewController? { neighbour(viewController, offset: -1) }
         func pageViewController(_ pageViewController: UIPageViewController, viewControllerAfter viewController: UIViewController) -> UIViewController? { neighbour(viewController, offset: 1) }
@@ -60,14 +61,16 @@ final class PageImageController: UIViewController {
     let pageID: UUID
     let revision: String
     let snapshot: PageSnapshot
+    let paper: String
     private var renderingTask: Task<Void, Never>?
-    init(pageID: UUID, revision: String, snapshot: PageSnapshot) {
-        self.pageID = pageID; self.revision = revision; self.snapshot = snapshot
+    init(pageID: UUID, revision: String, snapshot: PageSnapshot, paper: String) {
+        self.pageID = pageID; self.revision = revision; self.snapshot = snapshot; self.paper = paper
         super.init(nibName: nil, bundle: nil)
     }
     required init?(coder: NSCoder) { fatalError("Use init(pageID:revision:snapshot:)") }
     override func loadView() {
         let zoom = ZoomingImageView()
+        zoom.backgroundColor = paper == "warm" ? UIColor(red: 0.94, green: 0.91, blue: 0.84, alpha: 1) : paper == "dark" ? UIColor(white: 0.1, alpha: 1) : .secondarySystemGroupedBackground
         view = zoom
         let snapshot = snapshot
         renderingTask = Task {
@@ -77,11 +80,6 @@ final class PageImageController: UIViewController {
         }
     }
     deinit { renderingTask?.cancel() }
-}
-
-actor PageImageRenderer {
-    static let shared = PageImageRenderer()
-    func render(_ snapshot: PageSnapshot) -> Data? { autoreleasepool { PageRendering.image(snapshot)?.jpegData(compressionQuality: 0.93) } }
 }
 
 final class ZoomingImageView: UIScrollView, UIScrollViewDelegate {

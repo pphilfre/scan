@@ -7,12 +7,14 @@ struct AnnotationEditor: View {
     let importer: ImportCoordinator
     @Environment(\.modelContext) private var context
     @Environment(\.dismiss) private var dismiss
+    @Environment(LibraryActions.self) private var actions
+    @Environment(AccessController.self) private var access
     @State private var canvas = PKCanvasView()
     @State private var image: UIImage?
     var body: some View {
         NavigationStack {
             Group {
-                if let image { InkCanvas(image: image, canvas: canvas, rotation: page.rotation) }
+                if let image { InkCanvas(image: image, canvas: canvas, rotation: page.rotation, adjustments: ImageAdjustments(data: page.enhancementData)) }
                 else { ProgressView("Opening page…") }
             }
             .background(Color(uiColor: .systemGroupedBackground))
@@ -21,23 +23,30 @@ struct AnnotationEditor: View {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") {
-                        page.drawingData = canvas.drawing.dataRepresentation()
-                        do { try context.save(); dismiss() } catch { importer.error = error.localizedDescription }
+                        guard access.canRead(page) else { return }
+                        actions.edit([page], in: context, name: "Annotate page") { page.drawingData = canvas.drawing.dataRepresentation() }
+                        dismiss()
                     }.fontWeight(.semibold).disabled(image == nil)
                 }
                 ToolbarItemGroup(placement: .bottomBar) {
                     Button("Undo", systemImage: "arrow.uturn.backward") { canvas.undoManager?.undo() }
                     Spacer()
-                    Text("Draw with a finger or Apple Pencil").font(.caption).foregroundStyle(.secondary)
+                    Menu("Tools", systemImage: "pencil.tip") {
+                        Button("Pen", systemImage: "pencil.tip") { canvas.isRulerActive = false; canvas.tool = PKInkingTool(.pen, color: .black, width: 3) }
+                        Button("Highlighter", systemImage: "highlighter") { canvas.isRulerActive = false; canvas.tool = PKInkingTool(.marker, color: .systemYellow, width: 26) }
+                        Button("Underline", systemImage: "underline") { canvas.tool = PKInkingTool(.pen, color: .black, width: 2); canvas.isRulerActive = true }
+                        Button("Eraser", systemImage: "eraser") { canvas.tool = PKEraserTool(.vector) }
+                    }
                     Spacer()
                     Button("Redo", systemImage: "arrow.uturn.forward") { canvas.undoManager?.redo() }
                 }
             }
-            .onAppear {
-                image = PageRendering.baseImage(page.imageData)
+            .task {
                 canvas.drawing = (try? PKDrawing(data: page.drawingData)) ?? PKDrawing()
+                let data = await PageImageRenderer.shared.annotationBase(PageSnapshot(page))
+                if !Task.isCancelled { image = data.flatMap { UIImage(data: $0) } }
             }
-        }.interactiveDismissDisabled()
+        }.interactiveDismissDisabled().modifier(PageProtection(page: page))
     }
 }
 
@@ -45,32 +54,41 @@ struct InkCanvas: UIViewRepresentable {
     let image: UIImage
     let canvas: PKCanvasView
     let rotation: Int
-    func makeUIView(context: Context) -> InkSurface { InkSurface(image: image, canvas: canvas, rotation: rotation) }
+    let adjustments: ImageAdjustments
+    func makeUIView(context: Context) -> InkSurface { InkSurface(image: image, canvas: canvas, rotation: rotation, adjustments: adjustments) }
     func updateUIView(_ view: InkSurface, context: Context) {}
 }
 
 final class InkSurface: UIView, UIScrollViewDelegate {
     private let scroll = UIScrollView()
     private let paper = UIView()
+    private let cropContainer = UIView()
     private let pageContainer = UIView()
     private let canvas: PKCanvasView
     private let picker = PKToolPicker()
     private let pageSize: CGSize
     private var previousSize: CGSize = .zero
-    init(image: UIImage, canvas: PKCanvasView, rotation: Int) {
+    init(image: UIImage, canvas: PKCanvasView, rotation: Int, adjustments: ImageAdjustments) {
         self.canvas = canvas
         let size = CGSize(width: 1000, height: 1000 * image.size.height / image.size.width)
         let turns = (rotation % 4 + 4) % 4
-        pageSize = turns % 2 == 0 ? size : CGSize(width: size.height, height: size.width)
+        let normalized = adjustments.crop.clamped
+        let crop = CGRect(x: normalized.x * size.width, y: normalized.y * size.height, width: normalized.width * size.width, height: normalized.height * size.height)
+        pageSize = turns % 2 == 0 ? crop.size : CGSize(width: crop.height, height: crop.width)
         super.init(frame: .zero)
         addSubview(scroll)
         scroll.delegate = self
         scroll.addSubview(pageContainer)
         pageContainer.frame = CGRect(origin: .zero, size: pageSize)
-        pageContainer.addSubview(paper)
+        pageContainer.addSubview(cropContainer)
+        cropContainer.bounds = CGRect(origin: .zero, size: crop.size)
+        cropContainer.center = CGPoint(x: pageSize.width / 2, y: pageSize.height / 2)
+        cropContainer.transform = CGAffineTransform(rotationAngle: CGFloat(turns) * .pi / 2)
+        cropContainer.clipsToBounds = true
+        cropContainer.addSubview(paper)
         paper.bounds = CGRect(origin: .zero, size: size)
-        paper.center = CGPoint(x: pageSize.width / 2, y: pageSize.height / 2)
-        paper.transform = CGAffineTransform(rotationAngle: CGFloat(turns) * .pi / 2)
+        paper.center = CGPoint(x: size.width / 2 - crop.minX, y: size.height / 2 - crop.minY)
+        paper.transform = CGAffineTransform(rotationAngle: CGFloat(adjustments.straighten) * .pi / 180)
         paper.backgroundColor = .white
         let background = UIImageView(image: image)
         background.frame = CGRect(origin: .zero, size: size)
@@ -80,7 +98,7 @@ final class InkSurface: UIView, UIScrollViewDelegate {
         canvas.backgroundColor = .clear
         canvas.isScrollEnabled = false
         canvas.drawingPolicy = .anyInput
-        canvas.tool = PKInkingTool(.pen, color: .label, width: 3)
+        canvas.tool = PKInkingTool(.pen, color: .black, width: 3)
         paper.addSubview(canvas)
         scroll.contentSize = pageSize
         picker.addObserver(canvas)

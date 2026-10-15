@@ -24,29 +24,69 @@ extension Color {
     }
 }
 
+struct CoverAppearance {
+    var title: String
+    var color: String
+    var secondColor: String
+    var symbol: String
+    var style: String
+    var spine: String
+    var texture: Double
+    init(_ book: Notebook) {
+        title = book.title; color = book.colorName; secondColor = book.gradientColorName
+        symbol = book.symbol; style = book.coverStyle; spine = book.spineLabel; texture = book.textureStrength
+    }
+    init(title: String, color: String, secondColor: String, symbol: String, style: String, spine: String, texture: Double) {
+        self.title = title; self.color = color; self.secondColor = secondColor
+        self.symbol = symbol; self.style = style; self.spine = spine; self.texture = texture
+    }
+}
+
 struct BookCover: View {
-    let book: Notebook
+    let appearance: CoverAppearance
+    var tabs: [String] = []
+    init(book: Notebook) { appearance = CoverAppearance(book); tabs = Array(book.activeSections.prefix(6).map(\.colorName)) }
+    init(appearance: CoverAppearance) { self.appearance = appearance }
     var body: some View {
         ZStack(alignment: .leading) {
-            RoundedRectangle(cornerRadius: 8).fill(FolioStyle.color(book.colorName).gradient)
-            if book.coverStyle == "ruled" {
-                VStack(spacing: 17) {
-                    ForEach(0..<10, id: \.self) { _ in Rectangle().fill(.white.opacity(0.07)).frame(height: 1) }
-                }.padding(.horizontal, 15)
+            RoundedRectangle(cornerRadius: 7).fill(LinearGradient(colors: [FolioStyle.color(appearance.color), FolioStyle.color(appearance.style == "gradient" ? appearance.secondColor : appearance.color).opacity(0.88)], startPoint: .topLeading, endPoint: .bottomTrailing))
+            if ["linen", "paper", "ruled"].contains(appearance.style) {
+                Canvas { context, size in
+                    var path = Path()
+                    let step: CGFloat = appearance.style == "ruled" ? 18 : 5
+                    for y in stride(from: CGFloat(0), through: size.height, by: step) {
+                        path.move(to: CGPoint(x: 0, y: y)); path.addLine(to: CGPoint(x: size.width, y: y))
+                    }
+                    if appearance.style == "linen" {
+                        for x in stride(from: CGFloat(0), through: size.width, by: step) {
+                            path.move(to: CGPoint(x: x, y: 0)); path.addLine(to: CGPoint(x: x, y: size.height))
+                        }
+                    }
+                    context.stroke(path, with: .color(.white.opacity(appearance.texture)), lineWidth: 0.5)
+                }.clipShape(RoundedRectangle(cornerRadius: 7))
             }
-            Rectangle().fill(.black.opacity(0.13)).frame(width: 10).padding(.leading, 6)
-            VStack(alignment: .leading, spacing: 12) {
-                Image(systemName: book.symbol).font(.title2.weight(.light))
-                Spacer()
-                Text(book.title).font(.system(.title3, design: .serif, weight: .medium)).lineLimit(3)
-                Rectangle().fill(.white.opacity(0.45)).frame(width: 28, height: 1)
-                Text("F O L I O").font(.system(size: 8, weight: .semibold))
-            }.foregroundStyle(.white).padding(22).padding(.leading, 4)
+            Rectangle().fill(.black.opacity(0.14)).frame(width: 13).padding(.leading, 5)
+            if !appearance.spine.isEmpty {
+                Text(appearance.spine.uppercased()).font(.system(size: 7, weight: .medium)).tracking(1)
+                    .rotationEffect(.degrees(-90)).fixedSize().frame(width: 16).foregroundStyle(.white.opacity(0.8)).padding(.leading, 4)
+            }
+            VStack(alignment: .leading, spacing: 10) {
+                Image(systemName: appearance.symbol).font(.title2.weight(.light))
+                Spacer(minLength: 8)
+                Text(appearance.title).font(.system(.title3, design: .serif, weight: .medium)).lineLimit(3).minimumScaleFactor(0.7)
+            }.foregroundStyle(.white).padding(20).padding(.leading, 8)
         }
         .aspectRatio(0.73, contentMode: .fit)
-        .overlay(alignment: .trailing) { RoundedRectangle(cornerRadius: 2).fill(.white.opacity(0.28)).frame(width: 3).padding(.vertical, 6).padding(.trailing, 3) }
-        .shadow(color: FolioStyle.color(book.colorName).opacity(0.22), radius: 12, x: 0, y: 8)
-        .accessibilityElement(children: .ignore).accessibilityLabel(book.title)
+        .overlay(alignment: .trailing) {
+            VStack(spacing: 5) {
+                ForEach(Array(tabs.enumerated()), id: \.offset) { _, color in
+                    RoundedRectangle(cornerRadius: 2).fill(FolioStyle.color(color)).frame(width: 9, height: 15)
+                        .overlay(alignment: .trailing) { Rectangle().fill(.white.opacity(0.3)).frame(width: 1) }
+                }
+            }.offset(x: 5).padding(.vertical, 14).accessibilityHidden(true)
+        }
+        .shadow(color: .black.opacity(0.13), radius: 8, x: 2, y: 5)
+        .accessibilityElement(children: .ignore).accessibilityLabel(appearance.title)
     }
 }
 

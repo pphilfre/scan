@@ -6,6 +6,8 @@ struct PageDetailsView: View {
     let importer: ImportCoordinator
     @Environment(\.modelContext) private var context
     @Environment(\.dismiss) private var dismiss
+    @Environment(LibraryActions.self) private var actions
+    @Environment(AccessController.self) private var access
     @State private var title = ""
     @State private var text = ""
     @State private var tags = ""
@@ -42,7 +44,7 @@ struct PageDetailsView: View {
                 }
             }
             .onAppear { title = page.title; text = page.text; tags = page.tags.joined(separator: ", "); sectionID = page.sectionID }
-        }
+        }.modifier(PageProtection(page: page))
     }
     private func useSuggestion() {
         guard let book = page.book else { return }
@@ -52,54 +54,24 @@ struct PageDetailsView: View {
         }
     }
     private func save() {
-        page.title = title.trimmingCharacters(in: .whitespacesAndNewlines)
-        page.text = text
-        page.tags = Array(Set(tags.split(separator: ",").map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty })).sorted()
-        if let suggestedNewSection, let book = page.book {
-            let section = BookSection(title: suggestedNewSection, rank: book.nextRank, book: book)
-            context.insert(section)
-            sectionID = section.id
-        }
-        if page.sectionID != sectionID, let book = page.book {
-            var entries = book.entries.filter { $0.id != "page:" + page.id.uuidString }
-            let position: Int
-            if let sectionID, let sectionIndex = entries.firstIndex(where: {
-                if case .section(let section) = $0 { return section.id == sectionID }; return false
-            }) { position = sectionIndex + 1 }
-            else { position = 0 }
-            entries.insert(.page(page), at: position)
-            book.applyOrder(entries)
-        }
-        do { try context.save(); dismiss() } catch { importer.error = error.localizedDescription }
-    }
-}
-
-struct MovePageView: View {
-    let page: NotePage
-    let importer: ImportCoordinator
-    let onMoved: () -> Void
-    @Query(sort: \Notebook.createdAt) private var books: [Notebook]
-    @Environment(\.modelContext) private var context
-    @Environment(\.dismiss) private var dismiss
-    var body: some View {
-        NavigationStack {
-            List(books.filter { $0.id != page.book?.id }) { book in
-                Button {
-                    let source = page.book
-                    let rank = book.nextRank
-                    page.book = book
-                    page.rank = rank
-                    page.sectionID = nil
-                    source?.applyOrder(source?.entries ?? [])
-                    book.applyOrder(book.entries)
-                    do { try context.save(); dismiss(); onMoved() } catch { importer.error = error.localizedDescription }
-                } label: {
-                    Label(book.title, systemImage: book.symbol).foregroundStyle(FolioStyle.color(book.colorName))
-                }
+        guard access.canRead(page) else { return }
+        actions.edit([page], in: context, name: "Edit page") {
+            page.title = title.trimmingCharacters(in: .whitespacesAndNewlines)
+            page.text = text
+            page.tags = Array(Set(tags.split(separator: ",").map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty })).sorted()
+            if let suggestedNewSection, let book = page.book {
+                let section = BookSection(title: suggestedNewSection, rank: book.nextRank, book: book)
+                context.insert(section); sectionID = section.id
             }
-            .overlay { if books.count < 2 { ContentUnavailableView("Make a little more room", systemImage: "books.vertical", description: Text("Create another book in your library to move this page.")) } }
-            .navigationTitle("Move page to…").navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } } }
+            if page.sectionID != sectionID, let book = page.book {
+                var entries = book.entries.filter { $0.id != "page:" + page.id.uuidString }
+                let position: Int
+                if let sectionID, let index = entries.firstIndex(where: {
+                    if case .section(let section) = $0 { return section.id == sectionID }; return false
+                }) { position = index + 1 } else { position = 0 }
+                entries.insert(.page(page), at: position); book.applyOrder(entries)
+            }
         }
+        dismiss()
     }
 }

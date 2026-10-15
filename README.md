@@ -1,24 +1,49 @@
-# Folio
+# Folio 2
 
-A native iPhone and iPad notebook for handwritten ideas. Built for **iOS 26** with SwiftUI, Liquid Glass, VisionKit, Vision, SwiftData, PencilKit and PDFKit. No third-party app dependencies, accounts, subscriptions, or remote OCR services.
+A native iOS 26 notebook for iPhone and iPad, built with SwiftUI, Liquid Glass, VisionKit, Vision, SwiftData, PencilKit, PDFKit, Core Image, LocalAuthentication, WidgetKit and App Intents. No third-party runtime dependencies or remote OCR services.
 
-## What is implemented
+## Working folder and LiveContainer
 
-- Native document scanner with edge detection, cropping, straightening and enhancement; multi-photo and multi-file imports, including PDFs.
-- Accurate, language-aware on-device Vision recognition, with book titles and tags as custom vocabulary. Original image bytes are saved before recognition; editable OCR text is stored separately. Interrupted recognition resumes on launch, and failed recognition can be retried.
-- Custom books with colours, SF Symbols and two cover styles. Maths, Physics and Economics are created as empty starter books.
-- Draggable section dividers and pages, native reorder controls, automatic numbering, and page moves between books. Moving a divider updates the section membership of pages following it.
-- Search across book titles, section names, page titles, OCR text, tags and detected dates, with highlighted text snippets. The floating glass input and adjacent close control follow the keyboard safe area.
-- Native page curls (scroll transitions with Reduce Motion), pinch and double-tap zoom, full-screen reading, thumbnails and a recognised-text view.
-- Rename, duplicate, rotate, delete, annotate, tag and favourite pages. Original scans and PencilKit ink remain separate. Recently viewed pages appear in the library.
-- Automatic titles, date detection, suggested sections and reviewed text corrections.
-- Local SwiftData persistence, optional CloudKit sync, and PDF sharing for pages and complete books, including annotations and rotations.
+**Settings → Working folder → Choose working folder…** opens the native Files folder picker. Choose a durable location **outside Folio’s/LiveContainer’s disposable app container**. Folio creates a `Folio Library` subfolder there and automatically saves its portable library after changes.
 
-Handwriting accuracy depends on the source. Vision does not guarantee mathematical notation, diagrams, or preservation of the original text layout. The scan is always available. PDF exports contain the visible pages and ink; editable OCR text stays in the library.
+The app uses local SwiftData for responsive offline editing. The chosen folder contains immutable originals, content-addressed page records, annotations, crops/enhancements, tags, dividers, books, bookmarks, links, deleted items and version history. Its coordinated, atomic `Library.json` index is committed after the referenced files. Unchanged originals and page records are reused.
 
-## Open in Xcode
+Before updating or changing containers, use **Save now** and check the saved time. If LiveContainer resets Folio’s app storage or its permission bookmark, reinstall/open Folio and **select that same working folder again**. Existing records are matched by UUID and merged into the local database. You can also choose a different folder to save a portable copy. Disconnecting never deletes the folder or local notes.
 
-Requirements: Xcode 26 or later and XcodeGen. CI uses the same **Xcode 26.6 / macos-26** toolchain as `pphilfre/mail`.
+Keep the folder available offline in Files. If another container changes its index, Folio refuses a stale overwrite and asks you to reconnect/merge. Older page edits are kept as versions. The folder is readable in Files; Face ID protects the app interface, not these exported files. A reset before the first successful folder save cannot be recovered from that folder.
+
+## Books and organisation
+
+- Colours, two-colour gradients, linen/paper/ruled finishes, SF Symbols and spine labels.
+- Physical coloured edge tabs jump between dividers. Nested sections support parent selection, colours, icons, divider styles and ordering; section exports include descendants.
+- Configurable bookshelf and thumbnail sizes, grid/list layouts, reading background, page numbers, thumbnail strip and page-turn animations.
+- Native multi-page continuous scanning; Unfiled collects pages before filing. Photo/PDF import, paper insertion and scans can target any position.
+- Dedicated organiser with drag-and-drop, native list reordering, multi-selection, batch rename/tags, duplication, rotation, crop/enhancement, movement, export and deletion.
+- Recoverable deletion, persistent Recently Deleted and a 20-command in-session undo history. Page edits retain immutable version records; sync duplicates are reconciled without discarding competing edits or different originals.
+
+## Reading and editing
+
+- Native page curls, swipe navigation, pinch/double-tap zoom, full screen, bookmarks and recently viewed pages within books.
+- Accurate language-aware Vision OCR, editable/searchable text and automatic titles/date/section suggestions. Interrupted recognition resumes; the original is saved first.
+- PencilKit pen, highlighter, eraser, ruler-assisted underline and undo/redo. Ink remains separate and aligns with crop, straightening and rotation.
+- Non-destructive crop, straightening, brightness, contrast and colour/grey/ink/warm filters.
+- Blank, lined, squared, dotted and graph paper templates.
+- Revision mode with movable/resizable answer covers, individual reveal, reveal/hide all and persistent cover positions.
+- Related-page links across books store identifiers without duplicating images.
+- PDF export for individual/selected pages, multiple sections or a complete book. Export reads originals in short-lived contexts, rendering one page at a time. PDFs contain visible scans and ink; OCR text stays editable in Folio.
+- Glass search directly above the keyboard with a separate close button; book/section/page/text/tag/date matches and highlighted text snippets. Locked/deleted note contents stay out of results.
+
+Vision does not guarantee handwritten equations or original text layout. The source scan remains available for review.
+
+## Privacy, sync and quick capture
+
+App-wide and per-book protection use `deviceOwnerAuthentication`: Face ID/Touch ID where available, with device-passcode fallback. Locks reset on backgrounding, and an opaque cover protects app-switcher snapshots, including presented sheets.
+
+Offline storage is the default. Optional CloudKit uses the same store URL, preserves edit history and consolidates duplicate app UUIDs that can arise when restoring the same folder on two devices. Concurrent page versions can be reviewed/restored. Changing sync requires reopening the app.
+
+The included Home Screen/Lock Screen widget and **Scan note** App Shortcut route to the scanner/Unfiled. **LiveContainer may not register guest-app widgets, Siri shortcuts or URL schemes with iOS.** These integrations require an installation method that exposes them to the operating system. Scanning, organisation and working-folder recovery are available inside the app.
+
+## Build and install
 
 ```sh
 brew install xcodegen
@@ -26,37 +51,18 @@ xcodegen generate --spec project.yml
 open Folio.xcodeproj
 ```
 
-Select a signing team and a unique bundle identifier if needed. Use a physical iPhone or iPad to test document scanning and Apple Pencil. Photos, PDF import, OCR, organisation and reading can be tested in the simulator.
+CI follows `pphilfre/mail`: **macos-26 / Xcode 26.6**, no package or simulator downloads. Device IPA and simulator tests run concurrently with 15-minute caps. Simulator discovery/boot occurs alongside generic simulator compilation; tests run without rebuilding. Stale runs are cancelled and module caches/logs are retained.
 
-## GitHub Actions
+[Builds and IPA downloads](https://github.com/pphilfre/scan/actions/workflows/ios.yml)
 
-[Builds and downloads](https://github.com/pphilfre/scan/actions/workflows/ios.yml)
+`Folio-device-IPA` contains an **unsigned** IPA (including the widget extension) and checksum. Signing is needed for installation; the build does not publish to TestFlight or the App Store.
 
-Pushing to `main` or `work` runs two jobs concurrently:
+For iCloud, register the app and `iCloud.dev.freddiephilpot.folio`, enable CloudKit/push notifications, use matching provisioning, initialise the development schema and deploy it to production before distributing. Update the identifiers together in `project.yml`, `Configuration/Folio.entitlements`, `FolioApp.swift` and `SettingsView.swift` when using another team/app ID. Widget signing must match its containing app.
 
-1. **Device IPA:** builds arm64 Release and uploads `Folio-device-IPA`, containing an unsigned IPA and SHA-256 checksum.
-2. **Simulator tests:** compiles the app/tests while an existing iOS 26 simulator boots, then tests without rebuilding.
+## Data migration and validation
 
-No package resolution, external app dependencies, runtime downloads, scheduled builds, or release publishing. Stale runs are cancelled; both jobs have a 15-minute cap. Compiler module caches are separated by platform, runner image and toolchain. Build logs and test results are uploaded for diagnosis. An IPA artifact alone does not establish that the parallel tests passed.
+The original `Notebook`, `BookSection`, `NotePage`, attributes and relationships are retained. New properties use defaults or optional values for additive lightweight migration and CloudKit compatibility. Before opening a pre-v2 local store, Folio copies the unopened SQLite/WAL/support files to `Application Support/Library Backups`. It never resets a failed store; offline retry remains available.
 
-The IPA is **unsigned** and needs compatible signing before installation. It is not an App Store or TestFlight upload. Signing with iCloud requires the matching Apple capabilities and container described below.
+Tests include a frozen copy of the **actual version 1 models**, reopen that store with the expanded schema, and verify scan bytes, ink, OCR, tags and relationships. Other tests cover nested membership, recoverable actions and undo, linking without image copies, cropping/rotation, Vision, PDF round trips, locked-note access, portable-folder restoration into an empty container and stale-index protection.
 
-## Optional iCloud
-
-Offline storage is the default. The sync switch checks the iCloud account, then applies on the next app launch using the **same store URL**. It does not move users to an empty, separate cloud store. A startup error offers “Open offline” without deleting saved files.
-
-For a signed installation:
-
-1. Register `dev.freddiephilpot.folio` (or your replacement app identifier) in your Apple developer team.
-2. Enable iCloud / CloudKit and push notifications, create `iCloud.dev.freddiephilpot.folio`, and include the matching capabilities in the provisioning profile.
-3. Update `Configuration/Folio.entitlements`, `FolioApp.swift`, and `SettingsView.swift` together if changing identifiers.
-4. Initialise the schema in development, then deploy the CloudKit schema to production before distributing production builds. Configure the production APNs entitlement through your distribution signing profile.
-5. Sign in to iCloud on the device, enable sync in Folio, then close and reopen the app.
-
-The schema uses default values, optional relationships, explicit inverses, and no uniqueness constraints for CloudKit compatibility. CloudKit handles eventual synchronisation; test on two signed devices before distributing a sync-enabled release.
-
-## Verification
-
-`Tests/LibraryTests.swift` checks divider membership/order, independent duplication, cascade deletion, title/date/section metadata, search snippets, a real Vision recognition request, and a rotated PDF export/import round trip.
-
-Local source checks in the Linux workspace validate Swift syntax, workflow/project structure, JSON assets, entitlements and shell syntax. Apple framework type checking and the tests require the GitHub macOS jobs. Physical-device checks are listed in [docs/device-checks.md](docs/device-checks.md).
+Linux preflight checks cover Swift syntax, assets, entitlements, project/workflow structure and shell syntax. Native compilation and XCTest run in GitHub Actions. Camera, biometrics, Apple Pencil, Files providers, LiveContainer recovery and two-device sync require [device checks](docs/device-checks.md).

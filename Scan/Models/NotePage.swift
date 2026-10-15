@@ -20,15 +20,23 @@ import SwiftData
     @Attribute(.externalStorage) var thumbnailData: Data = Data()
     @Attribute(.externalStorage) var drawingData: Data = Data()
     var book: Notebook?
+    var isBookmarked: Bool = false
+    var trashedAt: Date?
+    var modifiedAt: Date = Date()
+    var visualVersion: UUID = UUID()
+    var thumbnailVersion: UUID?
+    @Attribute(.externalStorage) var enhancementData: Data = Data()
+    @Attribute(.externalStorage) var revisionCoverData: Data = Data()
 
-    init(imageData: Data, thumbnailData: Data, rank: Double, book: Notebook) {
+
+    init(imageData: Data, thumbnailData: Data, rank: Double, book: Notebook? = nil) {
         self.imageData = imageData
         self.thumbnailData = thumbnailData
         self.rank = rank
         self.book = book
     }
-    func copy(to destination: Notebook) -> NotePage {
-        let page = NotePage(imageData: imageData, thumbnailData: thumbnailData, rank: destination.nextRank, book: destination)
+    func copy(to destination: Notebook?) -> NotePage {
+        let page = NotePage(imageData: imageData, thumbnailData: thumbnailData, rank: destination?.nextRank ?? rank + 1, book: destination)
         page.title = title + " copy"
         page.text = text
         page.rotation = rotation
@@ -38,7 +46,12 @@ import SwiftData
         page.recognitionState = recognitionState
         page.recognitionConfidence = recognitionConfidence
         page.suggestedSection = suggestedSection
-        page.sectionID = (destination.sections ?? []).filter { !$0.isDeleted && $0.rank < page.rank }
+        page.enhancementData = enhancementData
+        page.revisionCoverData = revisionCoverData
+        page.visualVersion = visualVersion
+        page.thumbnailVersion = thumbnailVersion
+        page.isBookmarked = isBookmarked
+        page.sectionID = (destination?.sections ?? []).filter { !$0.isDeleted && $0.rank < page.rank }
             .max(by: { $0.rank < $1.rank })?.id
         return page
     }

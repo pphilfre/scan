@@ -3,141 +3,113 @@ import SwiftData
 
 struct LibraryView: View {
     @Environment(\.modelContext) private var context
-    @Query(sort: \Notebook.createdAt) private var books: [Notebook]
-    @Query(sort: \NotePage.createdAt, order: .reverse) private var pages: [NotePage]
+    @Environment(AccessController.self) private var access
+    @Environment(LibraryActions.self) private var actions
+    @Environment(CaptureRouter.self) private var router
+    @Environment(WorkspaceFolder.self) private var workspace
+    @Query(sort: \Notebook.createdAt) private var storedBooks: [Notebook]
+    @Query(sort: \NotePage.rank) private var pages: [NotePage]
     @State private var importer = ImportCoordinator()
     @State private var newBook = false
     @State private var searching = false
     @State private var settings = false
     @State private var capture = false
-    @State private var selectedPage: NotePage?
-    @State private var filter = "All books"
-    private let columns = [GridItem(.adaptive(minimum: 140, maximum: 220), spacing: 26)]
-    private var recent: [NotePage] {
-        Array(pages.filter { $0.lastViewedAt != nil }.sorted { ($0.lastViewedAt ?? .distantPast) > ($1.lastViewedAt ?? .distantPast) }.prefix(8))
-    }
+    @State private var inbox = false
+    @State private var autoScan = false
+    @State private var trash = false
+    @State private var favourites = false
+    @AppStorage("shelfWidth") private var shelfWidth = 150.0
+    private var books: [Notebook] { storedBooks.filter { $0.trashedAt == nil } }
+    private var unfiledCount: Int { pages.filter { $0.book == nil && $0.trashedAt == nil }.count }
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 28) {
-                    header
-                    if !recent.isEmpty && filter == "All books" { recentSection }
-                    HStack {
-                        Text(filter == "Favourites" ? "Saved for later" : "Your bookshelf")
-                            .font(.system(.title2, design: .serif, weight: .medium))
-                        Spacer()
-                        Text("\(books.count) books").font(.caption).foregroundStyle(.secondary)
+                    if workspace.error != nil {
+                        Button("Working folder needs attention", systemImage: "exclamationmark.triangle") { settings = true }.font(.caption)
                     }
-                    if filter == "Favourites" {
-                        if pages.filter(\.isFavourite).isEmpty {
-                            ContentUnavailableView("Keep the good pages close", systemImage: "star", description: Text("Favourite a page from its reader to find it here."))
-                        }
-                        ForEach(pages.filter(\.isFavourite)) { page in
-                            Button { selectedPage = page } label: { PageRow(page: page, number: page.book?.orderedPages.firstIndex(where: { $0.id == page.id }).map { $0 + 1 }) }
-                                .buttonStyle(.plain)
-                        }
-                    } else {
-                        LazyVGrid(columns: columns, alignment: .leading, spacing: 30) {
-                            ForEach(books) { book in
-                                NavigationLink { BookView(book: book, importer: importer) } label: {
-                                    VStack(alignment: .leading, spacing: 12) {
-                                        BookCover(book: book)
-                                        Text(book.title).font(.subheadline.weight(.semibold)).foregroundStyle(.primary)
-                                        Text("\(book.pages?.count ?? 0) pages").font(.caption).foregroundStyle(.secondary)
-                                    }
-                                }.buttonStyle(.plain)
-                            }
-                            Button { newBook = true } label: {
-                                VStack(spacing: 12) {
-                                    RoundedRectangle(cornerRadius: 9).strokeBorder(.secondary.opacity(0.25), style: StrokeStyle(lineWidth: 1, dash: [5, 5]))
-                                        .aspectRatio(0.73, contentMode: .fit)
-                                        .overlay { Image(systemName: "plus").font(.title2.weight(.light)).foregroundStyle(.secondary) }
-                                    Text("New book").font(.subheadline).foregroundStyle(.secondary)
-                                    Text("Make room for ideas").font(.caption2).foregroundStyle(.tertiary)
+                    if unfiledCount > 0 {
+                        Button { inbox = true } label: {
+                            HStack {
+                                Label("Unfiled", systemImage: "tray").font(.subheadline.weight(.medium))
+                                Spacer(); Text("\(unfiledCount)").font(.subheadline.monospacedDigit()).foregroundStyle(.secondary)
+                                Image(systemName: "chevron.right").font(.caption).foregroundStyle(.tertiary)
+                            }.padding(17).background(.background, in: RoundedRectangle(cornerRadius: 16))
+                        }.buttonStyle(.plain)
+                    }
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: shelfWidth, maximum: shelfWidth + 55), spacing: 26)], spacing: 30) {
+                        ForEach(books) { book in
+                            NavigationLink { BookView(book: book, importer: importer) } label: {
+                                VStack(alignment: .leading, spacing: 12) {
+                                    BookCover(book: book)
+                                    HStack {
+                                        Text(book.title).font(.subheadline.weight(.medium)).lineLimit(1)
+                                        if book.isLocked { Image(systemName: "lock.fill").font(.caption2).foregroundStyle(.secondary) }
+                                    }.foregroundStyle(.primary)
                                 }
-                            }.buttonStyle(.plain).accessibilityIdentifier("newBook")
+                            }.buttonStyle(.plain)
                         }
                     }
-                    Label("Your thoughts. A little more organised.", systemImage: "leaf")
-                        .font(.caption).foregroundStyle(.tertiary).frame(maxWidth: .infinity).padding(.vertical, 12)
-                }.padding(.horizontal, 26).padding(.top, 12).padding(.bottom, 24).frame(maxWidth: 900)
-                .frame(maxWidth: .infinity)
+                    if books.isEmpty {
+                        ContentUnavailableView("Your next chapter", systemImage: "books.vertical", description: Text("Create a book, or scan straight into Unfiled."))
+                        Button("New book", systemImage: "plus") { newBook = true }.buttonStyle(.glass).frame(maxWidth: .infinity)
+                        Button("Open a library folder", systemImage: "folder") { settings = true }.font(.subheadline).frame(maxWidth: .infinity)
+                    }
+                }.padding(26).frame(maxWidth: 1100).frame(maxWidth: .infinity)
             }
-            .background(FolioStyle.paper)
-            .navigationTitle("Library").navigationBarTitleDisplayMode(.inline)
+            .background(FolioStyle.paper).navigationTitle("Books")
             .toolbar {
-                ToolbarItem(placement: .topBarLeading) { Text("FOLIO").font(.system(size: 12, weight: .semibold, design: .serif)).tracking(3) }
-                ToolbarItem(placement: .topBarTrailing) { Button("Settings", systemImage: "slider.horizontal.3") { settings = true } }
+                ToolbarItem(placement: .topBarLeading) {
+                    Menu {
+                        Button("Unfiled", systemImage: "tray") { inbox = true }
+                        Button("Favourites", systemImage: "star") { favourites = true }
+                        Button("Recently Deleted", systemImage: "trash") { trash = true }
+                        if actions.undoTitle != nil { Button("Undo", systemImage: "arrow.uturn.backward") { actions.undo() } }
+                        Button("Settings", systemImage: "slider.horizontal.3") { settings = true }
+                    } label: { Image(systemName: "line.3.horizontal") }
+                }
+                ToolbarItem(placement: .topBarTrailing) { Button("Search", systemImage: "magnifyingglass") { searching = true } }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Menu {
+                        Button("New book", systemImage: "book.closed") { newBook = true }
+                        Button("Import pages", systemImage: "folder") { autoScan = false; capture = true }
+                    } label: { Image(systemName: "plus") }
+                }
+                ToolbarItem(placement: .bottomBar) {
+                    Button { autoScan = true; capture = true; FolioStyle.haptic() } label: {
+                        Label("Scan", systemImage: "document.viewfinder").font(.subheadline.weight(.semibold)).padding(.horizontal, 24).padding(.vertical, 6)
+                    }.buttonStyle(.glassProminent).disabled(importer.isBusy)
+                }
             }
-            .safeAreaInset(edge: .bottom) { dock }
+            .safeAreaInset(edge: .bottom) {
+                VStack(spacing: 8) { if importer.isBusy { ImportProgress(importer: importer).padding(.horizontal) }; UndoBanner() }.padding(.bottom, 6)
+            }
             .sheet(isPresented: $newBook) { BookEditor() }
             .sheet(isPresented: $searching) { SearchView(importer: importer) }
             .sheet(isPresented: $settings) { SettingsView() }
-            .sheet(isPresented: $capture) { CaptureView(books: books, importer: importer) }
-            .fullScreenCover(item: $selectedPage) { page in PageReader(pages: page.book?.orderedPages ?? [page], initialID: page.id, importer: importer) }
+            .sheet(isPresented: $capture) { CaptureView(books: books, importer: importer, autoScan: autoScan) }
+            .sheet(isPresented: $inbox) { NavigationStack { PageOrganiser(book: nil, importer: importer) } }
+            .sheet(isPresented: $favourites) { FavouritePagesView(importer: importer) }
+            .sheet(isPresented: $trash) { TrashView() }
             .task {
-                if books.isEmpty && !UserDefaults.standard.bool(forKey: "seededLibrary") {
-                    context.insert(Notebook(title: "Maths", colorName: "sage", symbol: "function"))
-                    context.insert(Notebook(title: "Physics", colorName: "blue", symbol: "atom"))
-                    context.insert(Notebook(title: "Economics", colorName: "clay", symbol: "chart.line.uptrend.xyaxis"))
-                    do { try context.save(); UserDefaults.standard.set(true, forKey: "seededLibrary") }
-                    catch { importer.error = error.localizedDescription }
-                }
+                handleRoute()
                 await importer.resumePending(context: context)
             }
+            .onChange(of: workspace.isConnected) { _, connected in
+                if connected { Task { await importer.resumePending(context: context) } }
+            }
+            .onChange(of: router.route) { _, _ in handleRoute() }
             .alert("Something needs attention", isPresented: Binding(get: { importer.error != nil }, set: { if !$0 { importer.error = nil } })) {
                 Button("OK") { importer.error = nil }
             } message: { Text(importer.error ?? "") }
+            .modifier(ActionError())
         }
     }
-    private var header: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text(Date.now.formatted(.dateTime.weekday(.wide).month(.wide).day()).uppercased())
-                .font(.system(size: 10, weight: .semibold)).tracking(2).foregroundStyle(.secondary)
-            Text("A place for\nevery thought.").font(.system(size: 39, weight: .regular, design: .serif)).tracking(-1.1)
-                .fixedSize(horizontal: false, vertical: true)
-            Text("From paper to possibility.").font(.subheadline).foregroundStyle(.secondary)
-            Picker("Library filter", selection: $filter) {
-                Text("All books").tag("All books")
-                Text("Favourites").tag("Favourites")
-            }.pickerStyle(.segmented).padding(.top, 12)
-        }.padding(.bottom, 3)
-    }
-    private var recentSection: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Text("Pick up where you left off").font(.subheadline.weight(.medium))
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 12) {
-                    ForEach(recent) { page in
-                        Button { selectedPage = page } label: {
-                            HStack(spacing: 10) {
-                                PageThumbnail(page: page).frame(width: 40, height: 54).clipShape(RoundedRectangle(cornerRadius: 4))
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text(page.title).font(.caption.weight(.medium)).lineLimit(1)
-                                    Text(page.book?.title ?? "Note").font(.caption2).foregroundStyle(.secondary)
-                                }.frame(width: 140, alignment: .leading)
-                            }.padding(12).background(.background, in: RoundedRectangle(cornerRadius: 16))
-                        }.buttonStyle(.plain)
-                    }
-                }
-            }
-        }
-    }
-    private var dock: some View {
-        VStack(spacing: 10) {
-            if importer.isBusy { ImportProgress(importer: importer) }
-            GlassEffectContainer(spacing: 14) {
-                HStack(spacing: 14) {
-                    Button { searching = true; FolioStyle.haptic() } label: { Image(systemName: "magnifyingglass").frame(width: 48, height: 48) }
-                        .glassEffect(.regular.interactive(), in: .circle).accessibilityLabel("Search library")
-                    Button { capture = true; FolioStyle.haptic() } label: {
-                        Label("Scan a note", systemImage: "document.viewfinder").font(.subheadline.weight(.semibold)).padding(.horizontal, 24).frame(height: 50)
-                    }.buttonStyle(.glassProminent).tint(FolioStyle.ink).disabled(importer.isBusy)
-                    Button { newBook = true } label: { Image(systemName: "plus").frame(width: 48, height: 48) }
-                        .glassEffect(.regular.interactive(), in: .circle).accessibilityLabel("New book")
-                }
-            }
-        }.padding(.horizontal, 20).padding(.top, 8).padding(.bottom, 12)
+    private func handleRoute() {
+        guard let route = router.route else { return }
+        router.route = nil
+        if route == "scan" { autoScan = true; capture = true }
+        if route == "inbox" { inbox = true }
     }
 }
 

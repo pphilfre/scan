@@ -4,185 +4,198 @@ import SwiftData
 struct BookView: View {
     @Bindable var book: Notebook
     let importer: ImportCoordinator
+    var initialSectionID: UUID?
     @Environment(\.modelContext) private var context
     @Environment(\.dismiss) private var dismiss
+    @Environment(AccessController.self) private var access
+    @Environment(LibraryActions.self) private var actions
+    @AppStorage("pageLayout") private var layout = "grid"
+    @AppStorage("thumbnailWidth") private var thumbnailWidth = 105.0
+    @AppStorage("showPageNumbers") private var showNumbers = true
     @State private var capture = false
     @State private var editBook = false
-    @State private var newSection = false
-    @State private var sectionTitle = ""
+    @State private var organiser = false
+    @State private var template = false
+    @State private var sectionEditor = false
     @State private var editingSection: BookSection?
+    @State private var parentSection: UUID?
+    @State private var beforeEntry: String?
     @State private var selectedPage: NotePage?
     @State private var deleting = false
     @State private var share: ExportFile?
     @State private var exporting = false
+    @State private var exportSections = false
+    @State private var filter = "all"
+    @State private var jumpID: String?
+    private var visiblePages: [NotePage] {
+        switch filter {
+        case "bookmarks": book.orderedPages.filter(\.isBookmarked)
+        case "recent": book.orderedPages.filter { $0.lastViewedAt != nil }.sorted { ($0.lastViewedAt ?? .distantPast) > ($1.lastViewedAt ?? .distantPast) }
+        default: book.orderedPages
+        }
+    }
     var body: some View {
-        List {
-            Section {
-                HStack(alignment: .center, spacing: 24) {
-                    BookCover(book: book).frame(width: 85)
-                    VStack(alignment: .leading, spacing: 9) {
-                        Text(book.title).font(.system(.title, design: .serif))
-                        Text("\(book.pages?.count ?? 0) pages · \(book.sections?.count ?? 0) sections").font(.caption).foregroundStyle(.secondary)
-                        Text("A little knowledge, collected.").font(.caption).foregroundStyle(.tertiary)
-                    }
-                }.padding(.vertical, 16)
-            }.listRowBackground(Color.clear).listRowSeparator(.hidden)
-            if book.entries.isEmpty {
-                ContentUnavailableView("A fresh start", systemImage: "book.pages", description: Text("Scan or import your first page. Add dividers as your ideas grow."))
-                    .listRowBackground(Color.clear).listRowSeparator(.hidden)
-            }
-            ForEach(book.entries) { entry in
-                entryRow(entry)
-                .draggable(entry.id)
-                .dropDestination(for: String.self) { identifiers, _ in
-                    guard let source = identifiers.first else { return false }
-                    return drop(source, before: entry.id)
-                }
-                .listRowSeparator(.hidden)
-                .listRowBackground(Color.clear)
-            }
-            .onMove { source, destination in
-                var entries = book.entries
-                entries.move(fromOffsets: source, toOffset: destination)
-                book.applyOrder(entries)
-                save()
-                FolioStyle.haptic()
-            }
+        Group {
+            if !access.canOpen(book) { BookLockView(book: book) }
+            else { contents }
         }
-        .listStyle(.plain).background(FolioStyle.paper).scrollContentBackground(.hidden)
         .navigationTitle(book.title).navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItem(placement: .topBarTrailing) { EditButton() }
-            ToolbarItem(placement: .topBarTrailing) {
-                Menu {
-                    Button("Edit book", systemImage: "book.closed") { editBook = true }
-                    Button("Add divider", systemImage: "rectangle.split.1x2") { sectionTitle = ""; editingSection = nil; newSection = true }
-                    Button("Export PDF", systemImage: "square.and.arrow.up") { export() }.disabled(book.orderedPages.isEmpty || exporting)
-                    Button("Delete book", systemImage: "trash", role: .destructive) { deleting = true }
-                } label: { Image(systemName: "ellipsis") }
-            }
-        }
-        .safeAreaInset(edge: .bottom) {
-            VStack(spacing: 10) {
-                if importer.isBusy { ImportProgress(importer: importer) }
-                if exporting { ProgressView("Creating PDF…").font(.caption).padding().glassEffect() }
-                Button { capture = true } label: { Label("Add pages", systemImage: "document.viewfinder").padding(.horizontal, 25).padding(.vertical, 8) }
-                    .buttonStyle(.glassProminent).disabled(importer.isBusy)
-            }.padding()
-        }
-        .sheet(isPresented: $capture) { CaptureView(books: [book], importer: importer, initialBook: book) }
+        .toolbar { if access.canOpen(book) { toolbar } }
+        .sheet(isPresented: $capture) { CaptureView(books: [book], importer: importer, initialBook: book, beforeEntryID: beforeEntry) }
+        .sheet(isPresented: $exportSections) { SectionExportPicker(book: book) }
         .sheet(isPresented: $editBook) { BookEditor(book: book) }
+        .sheet(isPresented: $organiser) { NavigationStack { PageOrganiser(book: book, importer: importer) } }
+        .sheet(isPresented: $template) { TemplatePicker(book: book, beforeEntryID: beforeEntry) }
+        .sheet(isPresented: $sectionEditor) { SectionEditor(book: book, section: editingSection, initialParent: parentSection) }
         .sheet(item: $share) { ShareSheet(items: [$0.url]) }
         .fullScreenCover(item: $selectedPage) { page in PageReader(pages: book.orderedPages, initialID: page.id, importer: importer) }
-        .alert(editingSection == nil ? "New divider" : "Rename divider", isPresented: $newSection) {
-            TextField("Section title", text: $sectionTitle)
-            Button("Cancel", role: .cancel) {}
-            Button("Save") {
-                let title = sectionTitle.trimmingCharacters(in: .whitespacesAndNewlines)
-                guard !title.isEmpty else { return }
-                if let editingSection { editingSection.title = title }
-                else { context.insert(BookSection(title: title, rank: book.nextRank, book: book)) }
-                saveOrder()
+        .confirmationDialog("Move this book to Recently Deleted?", isPresented: $deleting, titleVisibility: .visible) {
+            Button("Delete book", role: .destructive) { actions.trashBook(book, context: context); dismiss() }
+        }
+        .modifier(ActionError())
+    }
+    private var contents: some View {
+        ScrollViewReader { proxy in
+            ScrollView {
+                VStack(alignment: .leading, spacing: 22) {
+                    Picker("Pages", selection: $filter) {
+                        Text("All").tag("all"); Text("Bookmarks").tag("bookmarks"); Text("Recent").tag("recent")
+                    }.pickerStyle(.segmented)
+                    if visiblePages.isEmpty && book.activeSections.isEmpty {
+                        ContentUnavailableView("No pages yet", systemImage: "book.pages", description: Text("Scan a note or add a paper template."))
+                    }
+                    if filter == "all" {
+                        pageGroup(book.orderedPages.filter { $0.sectionID == nil })
+                        ForEach(book.activeSections) { section in
+                            VStack(alignment: .leading, spacing: 12) {
+                                divider(section).id("section:" + section.id.uuidString)
+                                pageGroup(book.orderedPages.filter { $0.sectionID == section.id })
+                            }
+                        }
+                    } else { pageGroup(visiblePages) }
+                    Color.clear.frame(height: 24).dropDestination(for: String.self) { items, _ in
+                        guard let source = items.first else { return false }
+                        actions.reorder(source, before: nil, in: book, context: context); return true
+                    }
+                }.padding(20).frame(maxWidth: 1100).frame(maxWidth: .infinity)
+            }.background(FolioStyle.paper)
+            .safeAreaInset(edge: .trailing, spacing: 0) {
+                if !book.activeSections.isEmpty && filter == "all" {
+                    SectionTabs(book: book) { section in withAnimation(.smooth) { proxy.scrollTo("section:" + section.id.uuidString, anchor: .top) } }
+                }
             }
-        } message: { Text("Drag dividers and pages to organise your book.") }
-        .confirmationDialog("Delete \(book.title) and all its pages?", isPresented: $deleting, titleVisibility: .visible) {
-            Button("Delete book", role: .destructive) {
-                context.delete(book)
-                do { try context.save(); dismiss() } catch { importer.error = error.localizedDescription }
+            .onAppear { if let initialSectionID { jumpID = "section:" + initialSectionID.uuidString } }
+            .onChange(of: jumpID) { _, id in withAnimation(.smooth) { proxy.scrollTo(id, anchor: .top) } }
+        }
+        .safeAreaInset(edge: .bottom) {
+            VStack(spacing: 8) {
+                if importer.isBusy { ImportProgress(importer: importer).padding(.horizontal) }
+                if exporting { ProgressView("Exporting…").font(.caption) }
+                UndoBanner()
+            }.padding(.bottom, 6)
+        }
+    }
+    @ToolbarContentBuilder private var toolbar: some ToolbarContent {
+        ToolbarItem(placement: .topBarTrailing) {
+            Menu {
+                Button("Organise pages", systemImage: "square.grid.2x2") { organiser = true }
+                Button("Export sections…", systemImage: "square.and.arrow.up.on.square") { exportSections = true }.disabled(book.activeSections.isEmpty)
+                Button("Customise book", systemImage: "paintpalette") { editBook = true }
+                Button("Add divider", systemImage: "rectangle.split.1x2") { editingSection = nil; parentSection = nil; sectionEditor = true }
+                Button("Export book", systemImage: "square.and.arrow.up") { export(book.orderedPages, title: book.title) }.disabled(book.orderedPages.isEmpty || exporting)
+                Button(book.isLocked ? "Remove book lock" : "Protect book", systemImage: "lock") { toggleLock() }
+                if actions.undoTitle != nil { Button("Undo", systemImage: "arrow.uturn.backward") { actions.undo() } }
+                Button("Delete book", systemImage: "trash", role: .destructive) { deleting = true }
+            } label: { Image(systemName: "ellipsis") }
+        }
+        ToolbarItem(placement: .bottomBar) {
+            Menu {
+                Button("Scan or import", systemImage: "document.viewfinder") { beforeEntry = nil; capture = true }
+                Button("Paper template", systemImage: "document.badge.plus") { beforeEntry = nil; template = true }
+            } label: { Label("Add page", systemImage: "plus").padding(.horizontal, 18).padding(.vertical, 5) }.buttonStyle(.glassProminent).disabled(importer.isBusy)
+        }
+    }
+    @ViewBuilder private func pageGroup(_ pages: [NotePage]) -> some View {
+        if layout == "list" {
+            LazyVStack(spacing: 8) { ForEach(pages) { page in cell(page, grid: false) } }
+        } else {
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: thumbnailWidth, maximum: thumbnailWidth + 60), spacing: 16)], spacing: 20) {
+                ForEach(pages) { page in cell(page, grid: true) }
             }
         }
     }
-    @ViewBuilder private func entryRow(_ entry: BookEntry) -> some View {
-        switch entry {
-        case .section(let section):
-            HStack(spacing: 12) {
-                Image(systemName: "rectangle.split.1x2").foregroundStyle(FolioStyle.color(book.colorName))
-                Text(section.title).font(.system(.headline, design: .serif))
-                Rectangle().fill(FolioStyle.color(book.colorName).opacity(0.22)).frame(height: 1)
-            }.padding(.vertical, 10)
-            .contextMenu {
-                Button("Rename", systemImage: "pencil") { sectionTitle = section.title; editingSection = section; newSection = true }
-                Button("Remove divider", systemImage: "trash", role: .destructive) { context.delete(section); saveOrder() }
+    private func cell(_ page: NotePage, grid: Bool) -> some View {
+        Button { selectedPage = page } label: {
+            Group {
+                if grid {
+                    VStack(alignment: .leading, spacing: 7) {
+                        PageThumbnail(page: page).aspectRatio(0.72, contentMode: .fit).clipShape(RoundedRectangle(cornerRadius: 5)).shadow(color: .black.opacity(0.06), radius: 3, y: 2)
+                        HStack(spacing: 4) {
+                            if showNumbers { Text("\((book.orderedPages.firstIndex { $0.id == page.id } ?? 0) + 1)").foregroundStyle(.secondary) }
+                            Text(page.title).lineLimit(1)
+                            if page.isBookmarked { Image(systemName: "bookmark.fill").foregroundStyle(FolioStyle.ink) }
+                        }.font(.caption2)
+                    }
+                } else { PageRow(page: page, number: showNumbers ? book.orderedPages.firstIndex(where: { $0.id == page.id }).map { $0 + 1 } : nil) }
+            }.contentShape(Rectangle())
+        }.buttonStyle(.plain)
+        .draggable("page:" + page.id.uuidString)
+        .dropDestination(for: String.self) { items, _ in
+            guard let source = items.first else { return false }
+            actions.reorder(source, before: "page:" + page.id.uuidString, in: book, context: context); return true
+        }
+        .contextMenu {
+            Button("Insert before", systemImage: "plus") { beforeEntry = "page:" + page.id.uuidString; capture = true }
+            Button("Insert paper before", systemImage: "document.badge.plus") { beforeEntry = "page:" + page.id.uuidString; template = true }
+            Button(page.isBookmarked ? "Remove bookmark" : "Bookmark", systemImage: "bookmark") { actions.edit([page], in: context, name: "Bookmark") { page.isBookmarked.toggle() } }
+            Button("Duplicate", systemImage: "plus.square.on.square") { actions.duplicate([page], in: context) }
+            Button("Rotate", systemImage: "rotate.right") { actions.rotate([page], in: context) }
+            Button("Delete", systemImage: "trash", role: .destructive) { actions.trash([page], in: context) }
+        }
+    }
+    private func divider(_ section: BookSection) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: section.symbol)
+            Text(section.title).font(.system(.headline, design: .serif))
+            Spacer()
+            Text("\(book.pages(in: section).count)").font(.caption).foregroundStyle(.secondary)
+        }
+        .foregroundStyle(FolioStyle.color(section.colorName))
+        .padding(.leading, CGFloat(book.depth(of: section) * 14)).padding(12)
+        .background(section.dividerStyle == "band" ? FolioStyle.color(section.colorName).opacity(0.12) : .clear, in: RoundedRectangle(cornerRadius: 8))
+        .overlay(alignment: .bottom) { if section.dividerStyle != "band" { Rectangle().fill(FolioStyle.color(section.colorName).opacity(0.3)).frame(height: section.dividerStyle == "minimal" ? 1 : 3) } }
+        .draggable("section:" + section.id.uuidString)
+        .dropDestination(for: String.self) { items, _ in
+            guard let source = items.first else { return false }
+            actions.reorder(source, before: "section:" + section.id.uuidString, in: book, context: context); return true
+        }
+        .contextMenu {
+            Button("Edit divider", systemImage: "pencil") { editingSection = section; sectionEditor = true }
+            Button("Add subsection", systemImage: "rectangle.stack.badge.plus") { editingSection = nil; parentSection = section.id; sectionEditor = true }
+            Button("Insert pages here", systemImage: "plus") {
+                let items = book.entries; let index = items.firstIndex { $0.id == "section:" + section.id.uuidString } ?? items.count - 1
+                beforeEntry = items.indices.contains(index + 1) ? items[index + 1].id : nil; capture = true
             }
-        case .page(let page):
-            Button { selectedPage = page } label: {
-                PageRow(page: page, number: book.orderedPages.firstIndex(where: { $0.id == page.id }).map { $0 + 1 })
-            }.buttonStyle(.plain)
-            .contextMenu {
-                Button(page.isFavourite ? "Remove favourite" : "Favourite", systemImage: page.isFavourite ? "star.slash" : "star") { page.isFavourite.toggle(); save() }
-                Button("Duplicate", systemImage: "plus.square.on.square") { context.insert(page.copy(to: book)); saveOrder() }
-                Button("Delete page", systemImage: "trash", role: .destructive) { context.delete(page); saveOrder() }
+            Button("Export section", systemImage: "square.and.arrow.up") { export(book.pages(in: section), title: section.title) }.disabled(book.pages(in: section).isEmpty)
+            Button("Remove divider", systemImage: "trash", role: .destructive) { actions.removeSection(section, context: context) }
+        }
+    }
+    private func toggleLock() {
+        Task {
+            if await access.authenticate(reason: "Change protection for \(book.title)") {
+                book.modifiedAt = .now; book.isLocked.toggle(); if book.isLocked { access.unlockedBooks.insert(book.id) }
+                do { try context.save() } catch { actions.error = error.localizedDescription }
             }
         }
     }
-    private func drop(_ source: String, before target: String) -> Bool {
-        var entries = book.entries
-        guard source != target, let sourceIndex = entries.firstIndex(where: { $0.id == source }) else { return false }
-        let item = entries.remove(at: sourceIndex)
-        guard let destination = entries.firstIndex(where: { $0.id == target }) else { return false }
-        entries.insert(item, at: destination)
-        book.applyOrder(entries); save(); FolioStyle.haptic()
-        return true
-    }
-    private func saveOrder() { book.applyOrder(book.entries); save() }
-    private func save() { do { try context.save() } catch { importer.error = error.localizedDescription } }
-    private func export() {
+    private func export(_ pages: [NotePage], title: String) {
+        guard access.canOpen(book) else { return }
         exporting = true
-        let snapshots = book.orderedPages.map(PageSnapshot.init)
-        let title = book.title
+        let pageIDs = pages.map(\.id)
         Task {
             defer { exporting = false }
-            do { share = ExportFile(url: try await PDFExporter.shared.export(snapshots, title: title)) }
-            catch { importer.error = error.localizedDescription }
-        }
-    }
-}
-
-struct PageThumbnail: View {
-    let page: NotePage
-    var body: some View {
-        ZStack {
-            Color.white
-            if let image = UIImage(data: page.thumbnailData) {
-                Image(uiImage: image).resizable().scaledToFit().rotationEffect(.degrees(Double(page.rotation * 90)))
-            } else { Image(systemName: "document").foregroundStyle(.secondary) }
-        }.clipped().accessibilityHidden(true)
-    }
-}
-
-struct PageRow: View {
-    let page: NotePage
-    var number: Int? = nil
-    var query: String = ""
-    var body: some View {
-        HStack(spacing: 16) {
-            PageThumbnail(page: page).frame(width: 56, height: 76).clipShape(RoundedRectangle(cornerRadius: 5))
-                .overlay { RoundedRectangle(cornerRadius: 5).stroke(.secondary.opacity(0.12)) }
-            VStack(alignment: .leading, spacing: 6) {
-                HighlightedText(value: page.title, query: query).font(.subheadline.weight(.medium)).lineLimit(1)
-                if !query.isEmpty {
-                    HighlightedText(value: SmartMetadata.snippet(page.text, matching: query), query: query).font(.caption).foregroundStyle(.secondary).lineLimit(2)
-                } else {
-                    Text(page.text.isEmpty ? recognitionLabel : page.text.replacingOccurrences(of: "\n", with: " "))
-                        .font(.caption).foregroundStyle(.secondary).lineLimit(2)
-                }
-                HStack(spacing: 6) {
-                    if let number { Text("\(number.formatted(.number.precision(.integerLength(2))))").monospacedDigit() }
-                    Text((page.detectedDate ?? page.createdAt).formatted(date: .abbreviated, time: .omitted))
-                    if page.isFavourite { Image(systemName: "star.fill").foregroundStyle(.orange) }
-                    if !page.tags.isEmpty { Text("#" + page.tags.joined(separator: " #")).lineLimit(1) }
-                }.font(.system(size: 10)).foregroundStyle(.tertiary)
-            }
-            Spacer(minLength: 0)
-            Image(systemName: "chevron.right").font(.caption2).foregroundStyle(.tertiary)
-        }.padding(.vertical, 7).contentShape(Rectangle())
-    }
-    private var recognitionLabel: String {
-        switch page.recognitionState {
-        case "pending", "recognising": "Recognising handwriting…"
-        case "failed": "Original saved · retry text recognition"
-        case "empty": "No text detected · original saved"
-        default: "Add text to this page"
+            do { share = ExportFile(url: try await PDFExporter.shared.export(pageIDs: pageIDs, container: context.container, title: title)) }
+            catch { actions.error = error.localizedDescription }
         }
     }
 }

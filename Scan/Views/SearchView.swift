@@ -3,6 +3,7 @@ import SwiftData
 
 struct SearchView: View {
     let importer: ImportCoordinator
+    @Environment(AccessController.self) private var access
     @Query(sort: \Notebook.createdAt) private var books: [Notebook]
     @Query(sort: \BookSection.rank) private var sections: [BookSection]
     @Query(sort: \NotePage.createdAt, order: .reverse) private var pages: [NotePage]
@@ -12,14 +13,14 @@ struct SearchView: View {
     @State private var activeTerm = ""
     @State private var selectedPage: NotePage?
     private var term: String { activeTerm }
-    private var matchingBooks: [Notebook] { term.isEmpty ? [] : books.filter { $0.title.localizedStandardContains(term) } }
-    private var matchingSections: [BookSection] { term.isEmpty ? [] : sections.filter { $0.title.localizedStandardContains(term) } }
+    private var matchingBooks: [Notebook] { term.isEmpty ? [] : books.filter { $0.trashedAt == nil && $0.title.localizedStandardContains(term) } }
+    private var matchingSections: [BookSection] { term.isEmpty ? [] : sections.filter { $0.trashedAt == nil && $0.book?.trashedAt == nil && ($0.book.map(access.canOpen) ?? true) && $0.title.localizedStandardContains(term) } }
     private var matchingPages: [NotePage] {
         guard !term.isEmpty else { return [] }
-        return pages.filter {
-            $0.title.localizedStandardContains(term) || $0.text.localizedStandardContains(term) ||
-            $0.tags.contains { $0.localizedStandardContains(term) } ||
-            $0.detectedDate?.formatted(date: .abbreviated, time: .omitted).localizedStandardContains(term) == true
+        return pages.filter { page in
+            access.canRead(page) && (page.title.localizedStandardContains(term) || page.text.localizedStandardContains(term) ||
+            page.tags.contains { $0.localizedStandardContains(term) } ||
+            page.detectedDate?.formatted(date: .abbreviated, time: .omitted).localizedStandardContains(term) == true)
         }
     }
     var body: some View {
@@ -41,7 +42,7 @@ struct SearchView: View {
                         if !matchingSections.isEmpty {
                             Section("Sections") { ForEach(matchingSections) { section in
                                 if let book = section.book {
-                                    NavigationLink { BookView(book: book, importer: importer) } label: {
+                                    NavigationLink { BookView(book: book, importer: importer, initialSectionID: section.id) } label: {
                                         VStack(alignment: .leading, spacing: 5) {
                                             HighlightedText(value: section.title, query: term)
                                             Text(book.title).font(.caption).foregroundStyle(.secondary)
