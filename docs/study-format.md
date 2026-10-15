@@ -32,8 +32,8 @@ Apart from the document's numeric `version` and array `records`, **all values ar
 | --- | --- | --- |
 | `subject` | `title` | `board`, `qualification`, `notes`, `source` |
 | `topic` | `title`, `subject` | `parent`, `confidence`, `notes`, `noteBooks`, `noteSections`, `notePages`, `source` |
-| `paper` | `title` | `subject`, `subjectName`, `board`, `qualification`, `year`, `session`, `number`, `notes`, `pages`, `source` |
-| `question` | `label`, `paper` | `parent`, `section`, `topic`, `prompt`, `answer`, `working`, `correction`, `feedback`, `marks`, `earned`, `pageStart`, `pageEnd`, `retryAt`, `notes`, `source` |
+| `paper` | `title` | `subject`, `subjectName`, `board`, `qualification`, `year`, `session`, `number`, `notes`, `pages`, `source`, `durationMinutes`, `timerState`, `timerDeadline`, `timerRemaining`, `completedAt` |
+| `question` | `label`, `paper` | `parent`, `section`, `topic`, `prompt`, `answer`, `working`, `correction`, `feedback`, `marks`, `earned`, `pageStart`, `pageEnd`, `retryAt`, `notes`, `source`, `markingMode` |
 | `markScheme` | `title`, `paper` | `question`, `pages`, `notes`, `source` |
 | `mistake` | `title`, `what`, `reasoning` | `question`, `topic`, `category`, `resolved`, `retryAt`, `notePages`, `source` |
 | `card` | `prompt`, `answer` | `hint`, `topic`, `source`, `sourcePage`, `due`, `interval`, `repetitions`, `notes` |
@@ -48,6 +48,10 @@ Apart from the document's numeric `version` and array `records`, **all values ar
 `confidence` is `New`, `Exploring`, `Practising` or `Confident`. An omitted value means New. Confidence is self-assessed; scores do not set it automatically. Suggested mistake categories are `knowledge gap`, `method error`, `misread question` and `careless slip`; custom categories are accepted. `resolved` is `"true"` or `"false"`.
 
 Marks are finite, nonnegative numbers, including fractional marks. `earned` requires `marks` and cannot exceed it. Omit `earned` for an unmarked question; `"0"` means marked and earned zero. Parent, paper and section totals count leaf subquestions once. Children inherit the nearest parent's section name unless they specify one. Correct the leaf marks to correct totals.
+
+`markingMode` is normally omitted. Folio's **Mark this page** action sets it to `pageTotal`, creates a leaf question covering exactly one scan page and offers marks and a topic without question setup. A page total cannot overlap individual leaf questions or another total; remove it before switching that page to individual questions. This prevents counting the same marks twice. Page totals share the existing question/attempt history and export format.
+
+Papers optionally store whole-number `durationMinutes` from 1 to 720 (the Sit screen initially offers 90; choose the actual paper's duration). `timerState` is omitted before starting, or `running`, `paused`, `finished`. Running timers require an ISO 8601 `timerDeadline`; paused timers require finite nonnegative `timerRemaining` seconds, up to 43200. `completedAt` records when the sitting was finished. Folio derives ticks from the deadline, retaining time through navigation, backgrounding and relaunch; it does not schedule a background alarm. External AIs should omit timer state/history unless supplied. These optional string fields use the same portable study payload and folder backup as marks.
 
 Dates use ISO 8601 with time and timezone, for example `2026-10-15T17:00:00Z`. `rating` is `Again`, `Nearly` or `Got it`. Card `interval` is days, from zero to 180; `repetitions` is a nonnegative whole number. New cards with no `due` are immediately available. Rating again schedules 10 minutes, nearly one day, and got it at least three days, increasing by 2.3 up to 180 days. Reviews are scheduled from the time of the rating, with no missed-day penalty.
 

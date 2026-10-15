@@ -36,6 +36,10 @@ Use iOS 26 on physical devices; validate the installation method you intend to d
 
 ## Study tools
 
+- Open Sit, Scan, Mark and Reflect on an iPhone SE-sized viewport, landscape and iPad split view, in light/dark mode and accessibility text sizes. Check focus order, VoiceOver descriptions of dials, stage selection and selected page. Verify the timer is local to Sit and colour is accompanied by text/icons.
+- Start a one-minute sitting, leave the workspace, lock/background, force quit and reopen. Verify elapsed time continues; pause and repeat to verify it stays paused. Let time expire while in Mark, and while the app is suspended. Check finish feedback on return, reset confirmation, and that editing paper details during expiry does not rewind the clock. No background alarm is expected.
+- Mark a scanned page with **Mark this page**, use zero/full/fractional marks and choose a topic by subject and search. Reopen and confirm score/tag. Check previous/next pages, a question spanning two pages and inherited ranges, unassigned questions, inaccessible pages and a new scan append. Try creating an overlapping page total/question via JSON; it must reject the duplicate score. Cancel a dirty mark draft and verify discard confirmation; swipe dismissal must keep dirty edits open.
+
 - Open every Library study area on compact iPhone and iPad, at large Dynamic Type sizes and with VoiceOver. Create a subject, nested topics and a standalone paper without a subject or topic. Confirm new topics show neutral progress and confidence remains self-assessed.
 - From a topic link a book, a nested divider and individual notes. Open each original. Lock the book and confirm linked note contents stay protected until unlocked in Books. Make a card from a reader note, then open its source.
 - Scan a multi-page paper, import an ordered photo selection, import a PDF and append another batch. Verify original order in the reader, annotate/crop a page, then edit paper metadata and question marks. Ensure ink, original bytes and order remain unchanged. Attach existing scans in a chosen order. Cancel/interrupt capture and confirm saved originals remain recoverable in Unfiled.

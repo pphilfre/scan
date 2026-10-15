@@ -51,10 +51,12 @@ enum StudyRules {
             if record.type == .card, !record["source"].isEmpty, record["source"].hasPrefix("record:"), all[String(record["source"].dropFirst(7))] == nil {
                 issue("source", "The source record does not exist. Use record:ID for a study record, or plain text/a URL for an external source.")
             }
-            for field in ["marks", "earned", "interval", "repetitions"] where !record[field].isEmpty {
+            for field in ["marks", "earned", "interval", "repetitions", "durationMinutes", "timerRemaining"] where !record[field].isEmpty {
                 guard let number = record.number(field), number.isFinite, number >= 0 else { issue(field, "Use a finite number, zero or greater."); continue }
-                if field == "repetitions" && number.rounded() != number { issue(field, "Use a whole number.") }
+                if ["repetitions", "durationMinutes"].contains(field) && number.rounded() != number { issue(field, "Use a whole number.") }
                 if field == "interval" && number > 180 { issue(field, "The maximum interval is 180 days.") }
+                if field == "durationMinutes" && (number < 1 || number > 720) { issue(field, "Choose a duration between 1 and 720 minutes.") }
+                if field == "timerRemaining" && number > 43200 { issue(field, "Remaining time cannot exceed 12 hours.") }
             }
             if let earned = record.number("earned") {
                 if let marks = record.number("marks") {
@@ -71,8 +73,29 @@ enum StudyRules {
                     if let page = Int(record[field]), page > paper.ids("pages").count { issue(field, "This paper has \(paper.ids("pages").count) scanned pages.") }
                 }
             }
-            for field in ["retryAt", "due", "date", "started", "finished"] where !record[field].isEmpty {
+            if record.type == .question {
+                if !record["markingMode"].isEmpty && record["markingMode"] != "pageTotal" { issue("markingMode", "Use pageTotal or leave this field empty for individual questions.") }
+                if let parent = all[record["parent"]], parent["markingMode"] == "pageTotal" { issue("parent", "A page total cannot contain subquestions. Remove the total before adding individual questions.") }
+                if record["markingMode"] == "pageTotal" {
+                    if record["pageStart"].isEmpty || !record["parent"].isEmpty || (!record["pageEnd"].isEmpty && record["pageEnd"] != record["pageStart"]) {
+                        issue("pageStart", "A page total covers one scan page and has no parent.")
+                    }
+                }
+                let paperQuestions = all.values.filter { $0.type == .question && $0["paper"] == record["paper"] }
+                let leaves = StudyMarks.leaves(paperQuestions)
+                for total in leaves where total["markingMode"] == "pageTotal" {
+                    if let page = Int(total["pageStart"]), leaves.contains(where: { $0.id != total.id && StudyRules.pageRange($0, in: paperQuestions)?.contains(page) == true }) {
+                        issue("pageStart", "Page \(page) has a page total and individual questions. Remove the page total before marking the questions separately.")
+                    }
+                }
+            }
+            for field in ["retryAt", "due", "date", "started", "finished", "timerDeadline", "completedAt"] where !record[field].isEmpty {
                 if record.date(field) == nil { issue(field, "Use an ISO 8601 date with time and timezone, e.g. 2026-10-15T17:00:00Z.") }
+            }
+            if record.type == .paper {
+                if !record["timerState"].isEmpty && !["running", "paused", "finished"].contains(record["timerState"]) { issue("timerState", "Use running, paused or finished.") }
+                if record["timerState"] == "running" && record.date("timerDeadline") == nil { issue("timerDeadline", "A running timer needs a deadline.") }
+                if record["timerState"] == "paused" && record.number("timerRemaining") == nil { issue("timerRemaining", "A paused timer needs its remaining seconds.") }
             }
             if !record["resolved"].isEmpty && !["true", "false"].contains(record["resolved"]) { issue("resolved", "Use true or false as a string.") }
             if !record["confidence"].isEmpty && !confidence.contains(record["confidence"]) { issue("confidence", "Choose New, Exploring, Practising or Confident.") }

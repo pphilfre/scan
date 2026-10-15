@@ -4,6 +4,7 @@ import SwiftData
 struct StudyDetailView: View {
     let recordID: String
     var sessionID: String?
+    var showPaperWorkspace = true
     @Environment(\.modelContext) private var context
     @Environment(\.dismiss) private var dismiss
     @Environment(AccessController.self) private var access
@@ -28,6 +29,9 @@ struct StudyDetailView: View {
     var body: some View {
         Group {
             if let record {
+                if record.type == .paper && showPaperWorkspace {
+                    PaperWorkspace(recordID: record.id)
+                } else {
                 List {
                     if let notice { Section { Label(notice, systemImage: "checkmark.circle").foregroundStyle(.secondary) } }
                     if [.subject, .topic, .paper].contains(record.type) {
@@ -74,6 +78,7 @@ struct StudyDetailView: View {
                         Button("Retry tomorrow") { retryTomorrow(record) }
                         Button("Done", role: .cancel) {}
                     }
+                }
             } else { ContentUnavailableView("Study record removed", systemImage: "tray") }
         }
         .scrollContentBackground(.hidden).background(FolioStyle.paper)
@@ -114,9 +119,19 @@ struct StudyDetailView: View {
     }
     @ViewBuilder private func topicContent(_ topic: StudyRecord) -> some View {
         Section("Confidence") {
-            Picker("How it feels", selection: Binding(get: { topic["confidence"].isEmpty ? "New" : topic["confidence"] }, set: { value in
-                var changed = topic; changed["confidence"] = value; save(changed, notice: "Confidence updated")
-            })) { ForEach(StudyRules.confidence, id: \.self) { Text($0).tag($0) } }
+            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
+                ForEach(StudyRules.confidence, id: \.self) { value in
+                    let selected = (topic["confidence"].isEmpty ? "New" : topic["confidence"]) == value
+                    Button {
+                        var changed = topic; changed["confidence"] = value; save(changed, notice: "Confidence updated"); feedback.selection += 1
+                    } label: {
+                        Label(value, systemImage: selected ? "checkmark.circle.fill" : "circle")
+                            .font(.subheadline.weight(.medium)).frame(maxWidth: .infinity, minHeight: 44)
+                            .foregroundStyle(selected ? Color.white : StudyPalette.progress)
+                            .background(selected ? StudyPalette.progress : StudyPalette.progress.opacity(0.08), in: RoundedRectangle(cornerRadius: 14))
+                    }.buttonStyle(.plain).accessibilityAddTraits(selected ? .isSelected : [])
+                }
+            }
             Text("Confidence is your judgement. New topics are opportunities; marks don’t set this rating for you.").font(.caption).foregroundStyle(.secondary)
             Button("Add subtopic", systemImage: "plus") { draft = StudyDraft(record: StudyRecord(.topic, ["subject": topic["subject"], "parent": topic.id])) }
             ForEach(records.filter { $0.type == .topic && $0["parent"] == topic.id }) { linked($0) }

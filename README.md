@@ -4,6 +4,15 @@ A native iOS 26 notebook for iPhone and iPad, built with SwiftUI, Liquid Glass, 
 
 ## A level study
 
+The home screen is a **study desk** with circular marking progress and a continuation action. Past papers open a **Sit → Scan → Mark → Reflect** workspace:
+
+- **Sit:** a configurable countdown dial with pause/resume and finish. Its saved deadline survives navigation, backgrounding and relaunch. The timer stays inside the sitting screen; it does not schedule a background alarm.
+- **Scan:** camera, ordered photos, PDFs or existing scans, followed by a visual page gallery.
+- **Mark:** page thumbnails and a large scan with question scores beside it. Use **Mark this page** for one page total, or add individual questions. Mixing totals and questions for the same page is rejected. Quick score buttons support zero, full marks and fractional typed scores. Choose topics through searchable subject chips and nested topic paths.
+- **Reflect:** score and marking coverage, lost marks to revisit, and topic totals. Multi-page questions count once; subquestions retain inherited page ranges/topics.
+
+Colour distinguishes focus, saved progress and practice opportunities. Recall has tangible prompt/answer surfaces and rating buttons; topic confidence is selectable directly. Haptics follow selections and successful saves, with Settings and Reduce Motion respected. See [experience design](docs/experience-design.md).
+
 The Library has **Course maps**, **Past Papers**, **Flashcards & review**, and **Mistakes**, alongside your existing books. Start with a paper or a few cards; a course map is optional.
 
 - Create subjects, topics and nested subtopics. Each topic brings together linked books, dividers, note pages, questions, mistakes and cards. Confidence is self-assessed, with new topics shown as opportunities to explore.

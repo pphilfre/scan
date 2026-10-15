@@ -25,20 +25,31 @@ struct StudyReviewView: View {
                 VStack(alignment: .leading, spacing: 24) {
                     if let notice { Label(notice, systemImage: "checkmark.circle").font(.caption).foregroundStyle(.secondary).accessibilityIdentifier("study.review.notice") }
                     if let card = current {
-                        Text("\(reviewed) reviewed · \(queue.count) remaining").font(.caption).foregroundStyle(.secondary)
-                        Text(card["prompt"]).font(.system(.title2, design: .serif)).textSelection(.enabled).accessibilityIdentifier("study.review.prompt")
+                        HStack(spacing: 18) {
+                            StudyDial(progress: Double(reviewed) / Double(max(1, reviewed + queue.count)), value: "\(reviewed)", caption: "reviewed", color: .purple, size: 76)
+                            Text("\(queue.count) to go.\nTake a moment to recall it.").font(.subheadline).foregroundStyle(.secondary)
+                        }
+                        Text(card["prompt"]).font(.system(.title2, design: .rounded, weight: .semibold)).textSelection(.enabled)
+                            .frame(maxWidth: .infinity, minHeight: 160, alignment: .leading).padding(24)
+                            .background(StudyPalette.surface, in: RoundedRectangle(cornerRadius: 28)).accessibilityIdentifier("study.review.prompt")
                         if !card["hint"].isEmpty { DisclosureGroup("Hint") { Text(card["hint"]) } }
                         if revealed {
-                            Divider()
-                            Text(card["answer"]).textSelection(.enabled).accessibilityIdentifier("study.review.answer")
+                            Text(card["answer"]).textSelection(.enabled).padding(22).frame(maxWidth: .infinity, alignment: .leading)
+                                .background(StudyPalette.progress.opacity(0.09), in: RoundedRectangle(cornerRadius: 24)).accessibilityIdentifier("study.review.answer")
                             HStack {
                                 ForEach(["Again", "Nearly", "Got it"], id: \.self) { rating in
-                                    Button(rating) { rate(card, rating: rating) }.buttonStyle(.glass).frame(maxWidth: .infinity).accessibilityIdentifier("study.rate." + rating)
+                                    Button { rate(card, rating: rating) } label: {
+                                        VStack(spacing: 9) {
+                                            Image(systemName: rating == "Got it" ? "checkmark.circle.fill" : rating == "Nearly" ? "circle.lefthalf.filled" : "arrow.clockwise")
+                                            Text(rating).font(.subheadline.weight(.semibold))
+                                        }.frame(maxWidth: .infinity, minHeight: 76)
+                                            .background((rating == "Got it" ? StudyPalette.progress : rating == "Nearly" ? StudyPalette.focus : StudyPalette.revisit).opacity(0.1), in: RoundedRectangle(cornerRadius: 18))
+                                    }.buttonStyle(.plain).foregroundStyle(rating == "Got it" ? StudyPalette.progress : rating == "Nearly" ? StudyPalette.focus : StudyPalette.revisit).accessibilityIdentifier("study.rate." + rating)
                                 }
                             }
                             Text("Again: 10 minutes · Nearly: tomorrow · Got it: a longer interval").font(.caption).foregroundStyle(.secondary)
                         } else {
-                            Button("Reveal answer", systemImage: "eye") { revealed = true; feedback.selection += 1 }.buttonStyle(.glassProminent).accessibilityIdentifier("study.review.reveal")
+                            Button("Reveal answer", systemImage: "eye") { revealed = true; feedback.selection += 1 }.buttonStyle(.borderedProminent).controlSize(.large).tint(.purple).accessibilityIdentifier("study.review.reveal")
                         }
                         if !card["source"].isEmpty {
                             if card["source"].hasPrefix("record:"), let source = records.first(where: { $0.id == String(card["source"].dropFirst(7)) }) {
@@ -54,7 +65,7 @@ struct StudyReviewView: View {
                     }
                     if let error { Text(error).foregroundStyle(.red) }
                 }.padding(26).frame(maxWidth: 700).frame(maxWidth: .infinity, alignment: .center)
-            }.background(FolioStyle.paper).navigationTitle("Active recall").navigationBarTitleDisplayMode(.inline)
+            }.background(StudyPalette.canvas).navigationTitle("Active recall").navigationBarTitleDisplayMode(.inline)
                 .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Finish here", action: finish) } }
                 .sheet(item: $draft) { StudyEditor(record: $0.record) }
                 .onAppear {

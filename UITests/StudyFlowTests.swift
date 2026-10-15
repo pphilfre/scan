@@ -17,11 +17,15 @@ final class StudyFlowTests: XCTestCase {
         let app = launch()
         app.buttons["library.study.Past Papers"].tap()
         app.buttons["study.record.maths-2025-1"].tap()
+        app.buttons["paper.stage.Scan"].tap()
         let openScans = app.buttons["Open 3 pages in reader"]
         reveal(openScans, in: app); openScans.tap()
         XCTAssertTrue(app.images["reader.image"].waitForExistence(timeout: 10))
         XCTAssertTrue(app.staticTexts["1 of 3"].exists)
         app.buttons["Close"].firstMatch.tap()
+        app.buttons["paper.stage.Reflect"].tap()
+        let allQuestions = app.buttons["All questions and mark schemes"]
+        reveal(allQuestions, in: app); allQuestions.tap()
         let question = app.buttons["study.record.q1a"]
         reveal(question, in: app); question.tap()
         XCTAssertTrue(app.buttons["study.mark"].waitForExistence(timeout: 5))
@@ -50,6 +54,9 @@ final class StudyFlowTests: XCTestCase {
         let app = launch()
         app.buttons["library.study.Past Papers"].tap()
         app.buttons["study.record.maths-2025-1"].tap()
+        app.buttons["paper.stage.Reflect"].tap()
+        let allQuestions = app.buttons["All questions and mark schemes"]
+        reveal(allQuestions, in: app); allQuestions.tap()
         let question = app.buttons["study.record.q1a"]
         reveal(question, in: app); question.tap()
         app.buttons["study.mark"].tap()
@@ -62,6 +69,58 @@ final class StudyFlowTests: XCTestCase {
         retry.tap()
         XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "3 / 3 marks")).firstMatch.exists)
         XCTAssertTrue(app.staticTexts["Retry scheduled for tomorrow"].exists)
+    }
+    @MainActor func testPaperTimerPausesAndSurvivesNavigation() {
+        let app = launch()
+        app.buttons["library.study.Past Papers"].tap()
+        app.buttons["study.record.maths-2025-1"].tap()
+        app.buttons["paper.stage.Sit"].tap()
+        let timer = app.buttons["paper.timer.toggle"]
+        reveal(timer, in: app); timer.tap()
+        XCTAssertEqual(timer.label, "Pause timer")
+        timer.tap()
+        XCTAssertEqual(timer.label, "Resume timer")
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+        app.buttons["study.record.maths-2025-1"].tap()
+        XCTAssertTrue(app.buttons["paper.timer.toggle"].waitForExistence(timeout: 5))
+        reveal(app.buttons["paper.timer.toggle"], in: app)
+        XCTAssertEqual(app.buttons["paper.timer.toggle"].label, "Resume timer")
+    }
+    @MainActor func testPageMarkingSavesScoreAndTopic() {
+        let app = launch()
+        app.buttons["library.study.Past Papers"].tap()
+        app.buttons["study.record.maths-2025-1"].tap()
+        app.buttons["paper.stage.Mark"].tap()
+        app.buttons["paper.page.2"].tap()
+        let question = app.buttons["paper.question.q1a"]
+        reveal(question, in: app); question.tap()
+        let fullMarks = app.buttons["Full marks"]
+        reveal(fullMarks, in: app); fullMarks.tap()
+        let topic = app.buttons["paper.mark.topic"]
+        reveal(topic, in: app); topic.tap()
+        app.buttons["study.topic.quadratics"].tap()
+        app.buttons["study.save"].tap()
+        XCTAssertTrue(app.staticTexts["paper.mark.saved"].waitForExistence(timeout: 5))
+        app.buttons["paper.stage.Reflect"].tap()
+        XCTAssertTrue(app.staticTexts["3 / 3 marks"].waitForExistence(timeout: 5))
+    }
+    @MainActor func testWholePageMarksNeedNoQuestionSetup() {
+        let app = launch()
+        app.buttons["library.study.Past Papers"].tap()
+        app.buttons["study.record.maths-2025-1"].tap()
+        app.buttons["paper.stage.Mark"].tap()
+        app.buttons["paper.page.1"].tap()
+        let mark = app.buttons["paper.mark.total"]
+        reveal(mark, in: app); mark.tap()
+        let available = app.textFields["study.field.marks"]
+        XCTAssertTrue(available.waitForExistence(timeout: 5))
+        available.tap(); available.typeText("5")
+        let earned = app.textFields["study.field.earned"]
+        earned.tap(); earned.typeText("3")
+        app.buttons["study.save"].tap()
+        XCTAssertTrue(app.staticTexts["paper.mark.saved"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Page 1 total"].exists)
+        XCTAssertFalse(app.buttons["paper.mark.add"].exists)
     }
     @MainActor func testImportPreviewRequiresConfirmationAndRepeatSkips() {
         let app = launch(seed: false)

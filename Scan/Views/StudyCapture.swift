@@ -22,29 +22,50 @@ struct StudyCaptureView: View {
     @State private var feedback = StudyFeedbackState()
     var body: some View {
         NavigationStack {
-            List {
-                Section {
-                    Text("Pages are appended in capture or selection order. Your originals stay in Folio and use the same reader and annotation tools as your notes.").foregroundStyle(.secondary)
-                    Button("Scan pages", systemImage: "camera") { scanner = true }.disabled(importer.isBusy || !VNDocumentCameraViewController.isSupported)
-                    PhotosPicker(selection: $photos, maxSelectionCount: 100, selectionBehavior: .ordered, matching: .images) { Label("Import photos in selection order", systemImage: "photo.on.rectangle") }.disabled(importer.isBusy)
-                    Button("Import PDF or image files", systemImage: "folder") { files = true }.disabled(importer.isBusy)
-                    Button("Attach existing scans", systemImage: "link") { attachingExisting.toggle() }.disabled(importer.isBusy)
+            ScrollView {
+              VStack(alignment: .leading, spacing: 20) {
+                Text("Bring your working in.").font(.system(.largeTitle, design: .rounded, weight: .bold))
+                Text("Capture every page in order. You’ll add marks and topics next.").foregroundStyle(.secondary)
+                Button { scanner = true } label: {
+                    VStack(spacing: 14) {
+                        Image(systemName: "viewfinder").font(.system(size: 48, weight: .light))
+                        Text("Scan pages").font(.title3.weight(.semibold))
+                        Text("Keep adding pages, then tap Save").font(.subheadline)
+                    }.frame(maxWidth: .infinity).padding(.vertical, 30)
+                        .background(StudyPalette.focus.opacity(0.1), in: RoundedRectangle(cornerRadius: 28))
+                }.buttonStyle(.plain).foregroundStyle(StudyPalette.focus).disabled(importer.isBusy || !VNDocumentCameraViewController.isSupported)
+                if !VNDocumentCameraViewController.isSupported { Text("Camera scanning isn’t available here. Import photos or a PDF below.").font(.caption).foregroundStyle(.secondary) }
+                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
+                    PhotosPicker(selection: $photos, maxSelectionCount: 100, selectionBehavior: .ordered, matching: .images) {
+                        StudyActionTile(title: "Photos", detail: "Use selection order", symbol: "photo.on.rectangle", color: StudyPalette.focus)
+                    }.buttonStyle(.plain).disabled(importer.isBusy)
+                    Button { files = true } label: {
+                        StudyActionTile(title: "Files", detail: "PDFs and images", symbol: "folder", color: StudyPalette.focus)
+                    }.buttonStyle(.plain).disabled(importer.isBusy)
                 }
+                Button("Attach existing scans", systemImage: "link") { attachingExisting.toggle() }.buttonStyle(.bordered).disabled(importer.isBusy)
                 if attachingExisting {
-                    Section("Select pages in the intended order") {
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("Select pages in the intended order").font(.headline)
                         ForEach(pages.filter { access.canRead($0) }) { page in
                             Button {
                                 if chosen.contains(page.id) { chosen.removeAll { $0 == page.id } } else { chosen.append(page.id) }
                             } label: {
-                                HStack { Text(page.title); Spacer(); if let index = chosen.firstIndex(of: page.id) { Text("\(index + 1)").monospacedDigit() } }
-                            }
+                                HStack {
+                                    PageThumbnail(page: page).frame(width: 36, height: 50).clipShape(RoundedRectangle(cornerRadius: 4))
+                                    Text(page.title).foregroundStyle(.primary); Spacer()
+                                    if let index = chosen.firstIndex(of: page.id) { Text("\(index + 1)").monospacedDigit().foregroundStyle(StudyPalette.progress) }
+                                    else { Image(systemName: "circle").foregroundStyle(.secondary) }
+                                }.padding(12).background(StudyPalette.surface, in: RoundedRectangle(cornerRadius: 14))
+                            }.buttonStyle(.plain)
                         }
                         Button("Attach \(chosen.count) pages") { attach(chosen); chosen = []; attachingExisting = false }.disabled(chosen.isEmpty)
                     }
                 }
                 if importer.isBusy { ImportProgress(importer: importer) }
-                if let message { Text(message).accessibilityIdentifier("study.capture.result") }
-            }.navigationTitle("Paper scans").navigationBarTitleDisplayMode(.inline)
+                if let message { Label(message, systemImage: "checkmark.circle.fill").foregroundStyle(StudyPalette.progress).accessibilityIdentifier("study.capture.result") }
+              }.padding(22).frame(maxWidth: 700).frame(maxWidth: .infinity)
+            }.background(StudyPalette.canvas).navigationTitle("Paper scans").navigationBarTitleDisplayMode(.inline)
                 .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() }.disabled(importer.isBusy) } }
                 .interactiveDismissDisabled(importer.isBusy)
                 .sheet(isPresented: $scanner) {

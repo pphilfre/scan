@@ -11,10 +11,18 @@ final class ReaderFlowTests: XCTestCase {
     }
     @MainActor private func openReader() {
         prepare(); app.launch()
-        app.buttons["library.book.Physics"].tap()
+        openBook()
         let page = app.buttons["book.page.Lecture 1"]
         XCTAssertTrue(page.waitForExistence(timeout: 10)); page.tap()
         XCTAssertTrue(app.images["reader.image"].waitForExistence(timeout: 15))
+    }
+    @MainActor private func openBook() {
+        let book = app.buttons["library.book.Physics"]
+        for _ in 0..<10 {
+            if book.exists && book.isHittable { break }
+            app.swipeUp()
+        }
+        XCTAssertTrue(book.isHittable); book.tap()
     }
     @MainActor private func openTool(_ title: String, navigationTitle: String) {
         app.buttons["reader.menu"].tap()
@@ -75,7 +83,7 @@ final class ReaderFlowTests: XCTestCase {
     }
     @MainActor func testDividerIsAReaderPage() {
         prepare(); app.launch()
-        app.buttons["library.book.Physics"].tap()
+        openBook()
         app.buttons["book.divider.Mechanics"].tap()
         XCTAssertTrue(app.navigationBars["Mechanics"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["1 of 4"].exists)
@@ -105,6 +113,10 @@ final class ReaderFlowTests: XCTestCase {
         XCTAssertTrue(app.navigationBars["Add 1 page"].waitForExistence(timeout: 20))
         app.buttons["Keep in Unfiled"].tap()
         let unfiled = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "Unfiled")).firstMatch
+        for _ in 0..<10 {
+            if unfiled.exists && unfiled.isHittable { break }
+            app.swipeUp()
+        }
         XCTAssertTrue(unfiled.waitForExistence(timeout: 5)); unfiled.tap()
         XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "Physics lecture")).firstMatch.waitForExistence(timeout: 15))
     }

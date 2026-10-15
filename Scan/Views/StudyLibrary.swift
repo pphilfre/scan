@@ -13,7 +13,7 @@ enum StudyArea: String, CaseIterable, Identifiable {
     var introduction: String {
         switch self {
         case .courses: "Build a subject one topic at a time, or paste a course map. New topics are room to grow."
-        case .papers: "Scan a complete paper and keep it here. Add questions and topic links whenever you’re ready."
+        case .papers: "Work on paper. Keep time, scan your working, then mark each page."
         case .cards: "Add a card from a note, question or mistake. Reviews fit around you; there are no missed-day penalties."
         case .mistakes: "Save the reasoning you want to remember. Each retry is another chance to learn."
         }
@@ -57,6 +57,7 @@ struct StudyLibraryView: View {
     @Query private var items: [StudyItem]
     @State private var search = ""
     @State private var draft: StudyDraft?
+    @State private var createdPaperID: String?
     @State private var transfer = false
     @State private var reviewing = false
     @State private var session = false
@@ -103,16 +104,26 @@ struct StudyLibraryView: View {
         }
     }
     var body: some View {
-        List {
-            Section {
+        ScrollView {
+          VStack(alignment: .leading, spacing: 22) {
+            VStack(alignment: .leading, spacing: 14) {
                 Text(area.introduction).font(.subheadline).foregroundStyle(.secondary)
-                Button("Start a study session", systemImage: "play.circle") { session = true }
+                if area == .papers {
+                    Button("New past paper", systemImage: "plus.circle.fill") { draft = StudyDraft(record: StudyRecord(.paper)) }
+                        .buttonStyle(.borderedProminent).controlSize(.large).tint(StudyPalette.focus).accessibilityIdentifier("study.new.paper")
+                } else {
+                    Button("Start a study session", systemImage: "play.circle") { session = true }.buttonStyle(.bordered)
+                }
                 if area == .cards {
-                    Button("Review \(due) due cards", systemImage: "rectangle.on.rectangle") { reviewing = true }.disabled(due == 0).accessibilityIdentifier("study.review")
+                    HStack(spacing: 20) {
+                        StudyDial(progress: records.filter { $0.type == .card }.isEmpty ? 0 : Double(records.filter { $0.type == .card }.count - due) / Double(records.filter { $0.type == .card }.count), value: "\(due)", caption: "ready", color: .purple)
+                        Button("Review \(due) due cards", systemImage: "rectangle.on.rectangle") { reviewing = true }
+                            .buttonStyle(.borderedProminent).tint(.purple).disabled(due == 0).accessibilityIdentifier("study.review")
+                    }.padding(18).frame(maxWidth: .infinity, alignment: .leading).background(Color.purple.opacity(0.07), in: RoundedRectangle(cornerRadius: 24))
                 }
             }
             if area == .papers {
-                Section {
+                VStack(alignment: .leading, spacing: 16) {
                     Picker("Browse", selection: $questionMode) { Text("Papers").tag(false); Text("Questions").tag(true) }.pickerStyle(.segmented)
                     DisclosureGroup("Filter papers and questions") {
                         Picker("Subject", selection: $subject) {
@@ -126,12 +137,25 @@ struct StudyLibraryView: View {
                         Picker("Score", selection: $score) { ForEach(["All", "Unmarked", "Below 70%", "70% or more"], id: \.self) { Text($0).tag($0) } }
                         Toggle("Needs another attempt", isOn: $retries)
                     }
-                }
+                }.padding(18).background(StudyPalette.surface, in: RoundedRectangle(cornerRadius: 20))
             }
             if area == .mistakes { Toggle("Include resolved mistakes", isOn: $showResolved) }
-            Section {
+            LazyVStack(spacing: 12) {
                 ForEach(visible) { record in
-                    NavigationLink { StudyDetailView(recordID: record.id) } label: { StudyRecordRow(record: record, records: records) }
+                    NavigationLink { StudyDetailView(recordID: record.id) } label: {
+                        HStack(spacing: 18) {
+                            if record.type == .paper {
+                                let marks = StudyMarks.total(records.filter { $0.type == .question && $0["paper"] == record.id })
+                                StudyDial(progress: marks.count == 0 ? 0 : Double(marks.marked) / Double(marks.count), value: "\(marks.marked)/\(marks.count)", caption: "marked", size: 72)
+                            } else {
+                                Image(systemName: record.type == .mistake && record["resolved"] == "true" ? "checkmark.circle.fill" : area.symbol)
+                                    .font(.title2).foregroundStyle(area == .mistakes ? StudyPalette.revisit : StudyPalette.focus)
+                                    .frame(width: 42)
+                            }
+                            StudyRecordRow(record: record, records: records).frame(maxWidth: .infinity, alignment: .leading)
+                            Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundStyle(.tertiary)
+                        }.padding(18).background(StudyPalette.surface, in: RoundedRectangle(cornerRadius: 22))
+                    }.buttonStyle(.plain)
                         .accessibilityIdentifier("study.record." + record.id)
                 }
                 if visible.isEmpty { Text(search.isEmpty ? "Ready when you are. Add your first \(area.kind.name.lowercased()) using +, or paste study data." : "No matches. Try changing the filters.").foregroundStyle(.secondary) }
@@ -139,14 +163,18 @@ struct StudyLibraryView: View {
             if items.contains(where: { (try? $0.decoded()) == nil }) {
                 Text("A study record could not be read. Its saved data has been kept; export will report the error.").foregroundStyle(.red)
             }
+          }.padding(22).frame(maxWidth: 900).frame(maxWidth: .infinity)
         }
-        .scrollContentBackground(.hidden).background(FolioStyle.paper)
+        .background(StudyPalette.canvas)
         .navigationTitle(area.rawValue).searchable(text: $search)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) { Button("Import or export", systemImage: "arrow.up.arrow.down") { transfer = true }.accessibilityIdentifier("study.transfer") }
             ToolbarItem(placement: .topBarTrailing) { Button("Add \(area.kind.name)", systemImage: "plus") { draft = StudyDraft(record: StudyRecord(area.kind)) }.accessibilityIdentifier("study.add") }
         }
-        .sheet(item: $draft) { StudyEditor(record: $0.record) }
+        .sheet(item: $draft) { item in
+            StudyEditor(record: item.record) { if item.record.type == .paper { createdPaperID = item.record.id } }
+        }
+        .navigationDestination(item: $createdPaperID) { PaperWorkspace(recordID: $0) }
         .sheet(isPresented: $transfer) { StudyTransferView() }
         .sheet(isPresented: $reviewing) { StudyReviewView() }
         .sheet(isPresented: $session) { StudySessionView() }

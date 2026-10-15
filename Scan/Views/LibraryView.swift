@@ -27,18 +27,7 @@ struct LibraryView: View {
                     if workspace.error != nil {
                         Button("Working folder needs attention", systemImage: "exclamationmark.triangle") { settings = true }.font(.caption)
                     }
-                    VStack(alignment: .leading, spacing: 12) {
-                        Text("Study").font(.system(.title2, design: .serif))
-                        LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
-                            ForEach(StudyArea.allCases) { area in
-                                NavigationLink { StudyLibraryView(area: area) } label: {
-                                    Label(area.rawValue, systemImage: area.symbol).font(.subheadline.weight(.medium))
-                                        .frame(maxWidth: .infinity, minHeight: 54, alignment: .leading).padding(.horizontal, 14)
-                                        .background(.background, in: RoundedRectangle(cornerRadius: 16))
-                                }.buttonStyle(.plain).accessibilityIdentifier("library.study." + area.id)
-                            }
-                        }
-                    }
+                    StudyDesk()
                     if unfiledCount > 0 {
                         Button { inbox = true } label: {
                             HStack {
@@ -47,6 +36,11 @@ struct LibraryView: View {
                                 Image(systemName: "chevron.right").font(.caption).foregroundStyle(.tertiary)
                             }.padding(17).background(.background, in: RoundedRectangle(cornerRadius: 16))
                         }.buttonStyle(.plain)
+                    }
+                    HStack {
+                        Text("Your books").font(.system(.title2, design: .rounded, weight: .bold))
+                        Spacer()
+                        Button("New book", systemImage: "plus") { newBook = true }.font(.subheadline)
                     }
                     LazyVGrid(columns: [GridItem(.adaptive(minimum: shelfWidth, maximum: shelfWidth + 55), spacing: 26)], spacing: 30) {
                         ForEach(books) { book in
@@ -68,7 +62,7 @@ struct LibraryView: View {
                     }
                 }.padding(26).frame(maxWidth: 1100).frame(maxWidth: .infinity)
             }
-            .background(FolioStyle.paper).navigationTitle("Library")
+            .background(StudyPalette.canvas).navigationTitle("Your desk")
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Menu {

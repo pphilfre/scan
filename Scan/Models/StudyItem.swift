@@ -42,8 +42,8 @@ enum StudyKind: String, Codable, CaseIterable, Sendable {
         switch self {
         case .subject: ["title", "board", "qualification", "notes", "source"]
         case .topic: ["title", "subject", "parent", "confidence", "notes", "noteBooks", "noteSections", "notePages", "source"]
-        case .paper: ["title", "subject", "subjectName", "board", "qualification", "year", "session", "number", "notes", "pages", "source"]
-        case .question: ["label", "paper", "parent", "section", "topic", "prompt", "answer", "working", "correction", "feedback", "marks", "earned", "pageStart", "pageEnd", "retryAt", "notes", "source"]
+        case .paper: ["title", "subject", "subjectName", "board", "qualification", "year", "session", "number", "notes", "pages", "source", "durationMinutes", "timerState", "timerDeadline", "timerRemaining", "completedAt"]
+        case .question: ["label", "paper", "parent", "section", "topic", "prompt", "answer", "working", "correction", "feedback", "marks", "earned", "pageStart", "pageEnd", "retryAt", "notes", "source", "markingMode"]
         case .markScheme: ["title", "paper", "question", "pages", "notes", "source"]
         case .mistake: ["title", "question", "topic", "what", "reasoning", "category", "resolved", "retryAt", "notePages", "source"]
         case .card: ["prompt", "answer", "hint", "topic", "source", "sourcePage", "due", "interval", "repetitions", "notes"]

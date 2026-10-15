@@ -20,14 +20,23 @@ struct StudyEditor: View {
     private var isNew: Bool { !records.contains { $0.id == record.id } }
     private func binding(_ key: String) -> Binding<String> { Binding(get: { draft[key] }, set: { draft[key] = $0 }) }
     private var editableFields: [String] {
-        draft.type.fields.filter { !["pages", "noteBooks", "noteSections", "notePages", "sourcePage", "interval", "repetitions", "due", "retryAt"].contains($0) }
+        draft.type.fields.filter { !["pages", "noteBooks", "noteSections", "notePages", "sourcePage", "interval", "repetitions", "due", "retryAt", "durationMinutes", "timerState", "timerDeadline", "timerRemaining", "completedAt", "markingMode"].contains($0) }
     }
     var body: some View {
         NavigationStack {
             Form {
                 Section {
-                    Text("Study content stays editable. Check AI or imported material against your course and official mark schemes.").font(.caption).foregroundStyle(.secondary)
-                    ForEach(editableFields, id: \.self) { field in fieldEditor(field) }
+                    if draft.type == .paper {
+                        fieldEditor("title")
+                        fieldEditor("subject")
+                        if draft["subject"].isEmpty { fieldEditor("subjectName") }
+                        DisclosureGroup("Board, year and other details") {
+                            ForEach(editableFields.filter { !["title", "subject", "subjectName"].contains($0) }, id: \.self) { fieldEditor($0) }
+                        }
+                        Text("Next: sit the paper with a timer, or scan work you’ve already done.").font(.caption).foregroundStyle(.secondary)
+                    } else {
+                        ForEach(editableFields, id: \.self) { field in fieldEditor(field) }
+                    }
                 }
                 if [.topic, .mistake].contains(draft.type) {
                     Section("Related notes") {
@@ -107,6 +116,11 @@ struct StudyEditor: View {
     }
     private func save() {
         do {
+            if draft.type == .paper, let current = records.first(where: { $0.id == draft.id }) {
+                // Editing a title must not rewind a clock that finished while
+                // this sheet was open, or replace newly appended scans.
+                for field in ["durationMinutes", "timerState", "timerDeadline", "timerRemaining", "completedAt", "pages"] { draft[field] = current[field] }
+            }
             if draft.type == .question && draft.number("earned") != nil { draft["retryAt"] = "" }
             let marksChanged = isNew || record["earned"] != draft["earned"] || record["marks"] != draft["marks"]
             let changes = draft.type == .question ? StudyStore.attempt(record, replacing: draft, session: sessionID, recordAttempt: marksChanged) : [draft]
@@ -120,52 +134,8 @@ struct StudyMarkEditor: View {
     let question: StudyRecord
     var sessionID: String?
     var onSave: () -> Void
-    @Environment(\.modelContext) private var context
-    @Environment(\.dismiss) private var dismiss
-    @Query private var items: [StudyItem]
-    @State private var draft: StudyRecord
-    @State private var error: String?
-    @State private var feedback = StudyFeedbackState()
-    init(question: StudyRecord, sessionID: String? = nil, onSave: @escaping () -> Void) {
-        self.question = question; self.sessionID = sessionID; self.onSave = onSave
-        _draft = State(initialValue: question)
-    }
-    private func binding(_ key: String) -> Binding<String> { Binding(get: { draft[key] }, set: { draft[key] = $0 }) }
     var body: some View {
-        NavigationStack {
-            Form {
-                Section("Question " + question.title) {
-                    TextField("Marks available", text: binding("marks")).keyboardType(.decimalPad).accessibilityIdentifier("study.field.marks")
-                    TextField("Marks achieved", text: binding("earned")).keyboardType(.decimalPad).accessibilityIdentifier("study.field.earned")
-                    Picker("Topic (optional)", selection: binding("topic")) {
-                        Text("None").tag("")
-                        ForEach(StudyStore.records(items).filter { $0.type == .topic }) { Text($0.title).tag($0.id) }
-                    }
-                    Text("Leave achieved empty if unmarked. Zero is a marked score. Each saved score records an attempt.").font(.caption).foregroundStyle(.secondary)
-                }
-                Section {
-                    DisclosureGroup("Working, corrections and teacher feedback") {
-                        ForEach(["working", "correction", "feedback"], id: \.self) { field in
-                            VStack(alignment: .leading) {
-                                Text(field.capitalized).font(.caption).foregroundStyle(.secondary)
-                                TextEditor(text: binding(field)).frame(minHeight: 100).accessibilityLabel(field.capitalized)
-                            }
-                        }
-                    }
-                }
-                if let error { Text(error).foregroundStyle(.red) }
-            }.navigationTitle("Record marks").navigationBarTitleDisplayMode(.inline)
-                .toolbar {
-                    ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
-                    ToolbarItem(placement: .confirmationAction) { Button("Save") {
-                        do {
-                            if draft.number("earned") != nil { draft["retryAt"] = "" }
-                            try StudyStore.write(StudyStore.attempt(question, replacing: draft, session: sessionID), context: context)
-                            onSave(); dismiss()
-                        } catch { self.error = error.localizedDescription; feedback.error += 1 }
-                    }.accessibilityIdentifier("study.save") }
-                }.studyFeedback(feedback)
-        }
+        PageQuestionEditor(question: question, sessionID: sessionID, onSave: onSave)
     }
 }
 
