@@ -36,14 +36,14 @@ import Observation
             context.insert(PageRevision(page: page, reason: name))
         }
         do {
-            try context.save()
+            try LibraryPersistence.save(context)
             register(name) {
                 for (page, state) in previous where !page.isDeleted {
                     context.insert(PageRevision(page: page, reason: "Before undo"))
                     state.apply(to: page, in: context)
                 }
                 for placement in placements { placement.restore() }
-                try context.save()
+                try LibraryPersistence.save(context)
             }
             FolioStyle.haptic()
         } catch { context.rollback(); self.error = error.localizedDescription }
@@ -77,8 +77,8 @@ import Observation
             copies.append(copy)
         }
         do {
-            try context.save()
-            register("Duplicate pages") { for page in copies { page.trashedAt = .now; page.modifiedAt = .now }; try context.save() }
+            try LibraryPersistence.save(context)
+            register("Duplicate pages") { for page in copies { page.trashedAt = .now; page.modifiedAt = .now }; try LibraryPersistence.save(context) }
         } catch { context.rollback(); self.error = error.localizedDescription }
     }
     func move(_ pages: [NotePage], to book: Notebook?, before entryID: String?, in context: ModelContext) {
@@ -117,12 +117,12 @@ import Observation
         // A subsection moved independently becomes a top-level divider. Its descendants stay attached.
         if case .section(let section) = entry { section.parentID = nil }
         book.applyOrder(result)
-        do { try context.save(); register("Reorder pages") { placements.forEach { $0.restore() }; try context.save() } }
+        do { try LibraryPersistence.save(context); register("Reorder pages") { placements.forEach { $0.restore() }; try LibraryPersistence.save(context) } }
         catch { context.rollback(); self.error = error.localizedDescription }
     }
     func trashBook(_ book: Notebook, context: ModelContext) {
         book.trashedAt = .now; book.modifiedAt = .now
-        do { try context.save(); register("Delete book") { book.trashedAt = nil; book.modifiedAt = .now; try context.save() } }
+        do { try LibraryPersistence.save(context); register("Delete book") { book.trashedAt = nil; book.modifiedAt = .now; try LibraryPersistence.save(context) } }
         catch { context.rollback(); self.error = error.localizedDescription }
     }
     func removeSection(_ section: BookSection, context: ModelContext) {
@@ -131,7 +131,7 @@ import Observation
         section.trashedAt = .now; section.modifiedAt = .now
         for child in book.activeSections where child.parentID == section.id { child.parentID = section.parentID }
         book.applyOrder(book.entries)
-        do { try context.save(); register("Remove divider") { placements.forEach { $0.restore() }; try context.save() } }
+        do { try LibraryPersistence.save(context); register("Remove divider") { placements.forEach { $0.restore() }; try LibraryPersistence.save(context) } }
         catch { context.rollback(); self.error = error.localizedDescription }
     }
 }

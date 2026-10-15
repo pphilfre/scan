@@ -3,6 +3,8 @@ import SwiftData
 import Observation
 import UIKit
 import CryptoKit
+import ImageIO
+import UniformTypeIdentifiers
 
 struct BookArchive: Codable, Sendable {
     var id: UUID; var title: String; var color: String; var secondColor: String
@@ -93,20 +95,37 @@ actor FolderArchive {
         return result
     }
     func prepare(_ folder: URL) throws {
-        for name in ["originals", "pages", "revisions"] {
-            try FileManager.default.createDirectory(at: root(folder).appending(path: name, directoryHint: .isDirectory), withIntermediateDirectories: true)
+        var coordinationError: NSError?
+        let result = CoordinatedValue<Void>()
+        NSFileCoordinator(filePresenter: nil).coordinate(writingItemAt: folder, options: [], error: &coordinationError) { coordinated in
+            result.set(Result {
+                for name in ["originals", "pages", "revisions"] {
+                    try FileManager.default.createDirectory(at: coordinated.appending(path: "Folio Library/\(name)", directoryHint: .isDirectory), withIntermediateDirectories: true)
+                }
+            })
         }
+        if let coordinationError { throw coordinationError }; try result.get()
     }
     func existingOriginals(in folder: URL) throws -> Set<UUID> {
         let directory = root(folder).appending(path: "originals")
         let files = try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)
         return Set(files.compactMap { UUID(uuidString: $0.deletingPathExtension().lastPathComponent) })
     }
+    private static let originalExtensions = ["image", "jpg", "jpeg", "png", "heic", "heif", "tif", "tiff", "gif", "bmp", "webp", "avif", "jp2", "dng"]
+    private func originalURL(_ id: UUID, folder: URL) -> URL? {
+        for ext in Self.originalExtensions {
+            let url = root(folder).appending(path: "originals/\(id.uuidString).\(ext)")
+            if FileManager.default.fileExists(atPath: url.path) { return url }
+        }
+        return nil
+    }
     func writePage(_ page: ArchivedPage, original: Data?, folder: URL) throws -> String {
-        let originalURL = root(folder).appending(path: "originals/\(page.id.uuidString).image")
-        if !FileManager.default.fileExists(atPath: originalURL.path) {
+        if originalURL(page.id, folder: folder) == nil {
             guard let original else { throw WorkspaceError.missingPage }
-            try write(original, to: originalURL)
+            var ext = "image"
+            if let source = CGImageSourceCreateWithData(original as CFData, nil), let type = CGImageSourceGetType(source),
+               let preferred = UTType(type as String)?.preferredFilenameExtension, Self.originalExtensions.contains(preferred) { ext = preferred }
+            try write(original, to: root(folder).appending(path: "originals/\(page.id.uuidString).\(ext)"))
         }
         let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys]
         let data = try encoder.encode(page)
@@ -124,7 +143,8 @@ actor FolderArchive {
             guard actual == hash else { throw WorkspaceError.missingPage }
             let meta = try JSONDecoder().decode(ArchivedPage.self, from: metadata)
             guard meta.id == id else { throw WorkspaceError.missingPage }
-            let original = try read(root(folder).appending(path: "originals/\(id.uuidString).image"))
+            guard let source = originalURL(id, folder: folder) else { throw WorkspaceError.missingPage }
+            let original = try read(source)
             guard !original.isEmpty else { throw WorkspaceError.missingPage }
             return (meta, original)
         } catch { throw WorkspaceError.missingPage }
@@ -150,13 +170,16 @@ actor FolderArchive {
         let data = try encoder.encode(manifest)
         var coordinationError: NSError?
         let result = CoordinatedValue<Void>()
-        NSFileCoordinator(filePresenter: nil).coordinate(writingItemAt: url, options: .forReplacing, error: &coordinationError) { coordinated in
+        let exists = FileManager.default.fileExists(atPath: url.path)
+        let item = exists ? url : url.deletingLastPathComponent()
+        NSFileCoordinator(filePresenter: nil).coordinate(writingItemAt: item, options: exists ? .forReplacing : [], error: &coordinationError) { coordinated in
+            let target = exists ? coordinated : coordinated.appending(path: url.lastPathComponent)
             result.set(Result {
-                if FileManager.default.fileExists(atPath: coordinated.path) {
-                    let current = try JSONDecoder().decode(FolderManifest.self, from: Data(contentsOf: coordinated))
+                if FileManager.default.fileExists(atPath: target.path) {
+                    let current = try JSONDecoder().decode(FolderManifest.self, from: Data(contentsOf: target))
                     guard current.savedAt == expected else { throw WorkspaceError.changed }
                 } else if expected != nil { throw WorkspaceError.changed }
-                try data.write(to: coordinated, options: .atomic)
+                try data.write(to: target, options: .atomic)
             })
         }
         if let coordinationError { throw coordinationError }; try result.get()
@@ -179,11 +202,25 @@ actor FolderArchive {
     private func write(_ data: Data, to url: URL) throws {
         var coordinationError: NSError?
         let result = CoordinatedValue<Void>()
-        NSFileCoordinator(filePresenter: nil).coordinate(writingItemAt: url, options: .forReplacing, error: &coordinationError) { coordinated in
-            result.set(Result { try data.write(to: coordinated, options: .atomic) })
+        let exists = FileManager.default.fileExists(atPath: url.path)
+        let item = exists ? url : url.deletingLastPathComponent()
+        NSFileCoordinator(filePresenter: nil).coordinate(writingItemAt: item, options: exists ? .forReplacing : [], error: &coordinationError) { coordinated in
+            let target = exists ? coordinated : coordinated.appending(path: url.lastPathComponent)
+            result.set(Result { try data.write(to: target, options: .atomic) })
         }
         if let coordinationError { throw coordinationError }; try result.get()
     }
+}
+
+/// Keep a Files-provider grant alive until disconnect or replacement. A value
+/// owner also balances access if a connection attempt throws.
+private final class FolderAccess {
+    let url: URL
+    init?(_ url: URL) {
+        guard url.startAccessingSecurityScopedResource() else { return nil }
+        self.url = url
+    }
+    deinit { url.stopAccessingSecurityScopedResource() }
 }
 
 @MainActor @Observable final class WorkspaceFolder {
@@ -193,6 +230,7 @@ actor FolderArchive {
     var restoring = false
     var error: String?
     private var folder: URL?
+    private var folderAccess: FolderAccess?
     private var pending: Task<Void, Never>?
     private var expectedDate: Date?
     private var dirty = false
@@ -209,8 +247,7 @@ actor FolderArchive {
     func connect(_ url: URL, context: ModelContext) async throws {
         guard !busy else { return }
         busy = true; defer { busy = false; restoring = false }
-        let scoped = url.startAccessingSecurityScopedResource()
-        defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+        let access = FolderAccess(url)
         pageCache.removeAll()
         let manifest = try await FolderArchive.shared.manifest(in: url)
         if let manifest {
@@ -226,33 +263,39 @@ actor FolderArchive {
         let bookmark = try url.bookmarkData(options: [.minimalBookmark], includingResourceValuesForKeys: nil, relativeTo: nil)
         UserDefaults.standard.set(bookmark, forKey: "workspaceBookmark")
         UserDefaults.standard.set(url.lastPathComponent, forKey: "workspaceName")
+        folderAccess = access
         folder = url; folderName = url.lastPathComponent
+        LibraryPersistence.observe(self, context: context)
         dirty = true
         // Save immediately after attach/restore, without requiring another edit.
         busy = false
         await saveNow(context: context)
     }
     func disconnect() {
+        LibraryPersistence.stopObserving(self)
+        folderAccess = nil
         pending?.cancel(); folder = nil; folderName = nil; expectedDate = nil; pageCache.removeAll()
         UserDefaults.standard.removeObject(forKey: "workspaceBookmark")
         UserDefaults.standard.removeObject(forKey: "workspaceName")
     }
     func schedule(context: ModelContext) {
         guard folder != nil else { return }
-        dirty = true; pending?.cancel()
+        dirty = true
+        guard !busy else { return }
+        pending?.cancel()
         pending = Task {
             do { try await Task.sleep(for: .milliseconds(800)) } catch { return }
+            pending = nil // This task is now a writer, no longer a cancellable timer.
             await saveNow(context: context)
         }
     }
     func saveNow(context: ModelContext) async {
-        guard !busy, let folder else { return }
+        guard let folder else { return }
+        guard !busy else { dirty = true; return }
         pending?.cancel(); pending = nil
         busy = true; dirty = false
         let background = UIApplication.shared.beginBackgroundTask(withName: "Save working folder")
-        let scoped = folder.startAccessingSecurityScopedResource()
         defer {
-            if scoped { folder.stopAccessingSecurityScopedResource() }
             if background != .invalid { UIApplication.shared.endBackgroundTask(background) }
             busy = false
             if dirty { schedule(context: context) }
@@ -350,6 +393,6 @@ actor FolderArchive {
                 link.id = archived.id; link.createdAt = archived.created; link.removedAt = archived.removed; context.insert(link)
             }
         }
-        do { try LibraryReconciler.run(context); try context.save() } catch { context.rollback(); throw error }
+        do { try LibraryReconciler.run(context); try LibraryPersistence.save(context) } catch { context.rollback(); throw error }
     }
 }

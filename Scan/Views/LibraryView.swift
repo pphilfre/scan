@@ -15,7 +15,6 @@ struct LibraryView: View {
     @State private var settings = false
     @State private var capture = false
     @State private var inbox = false
-    @State private var autoScan = false
     @State private var trash = false
     @State private var favourites = false
     @AppStorage("shelfWidth") private var shelfWidth = 150.0
@@ -47,7 +46,7 @@ struct LibraryView: View {
                                         if book.isLocked { Image(systemName: "lock.fill").font(.caption2).foregroundStyle(.secondary) }
                                     }.foregroundStyle(.primary)
                                 }
-                            }.buttonStyle(.plain)
+                            }.buttonStyle(.plain).accessibilityIdentifier("library.book." + book.title)
                         }
                     }
                     if books.isEmpty {
@@ -72,13 +71,13 @@ struct LibraryView: View {
                 ToolbarItem(placement: .topBarTrailing) {
                     Menu {
                         Button("New book", systemImage: "book.closed") { newBook = true }
-                        Button("Import pages", systemImage: "folder") { autoScan = false; capture = true }
+                        Button("Import pages", systemImage: "folder") { capture = true }
                     } label: { Image(systemName: "plus") }
                 }
                 ToolbarItem(placement: .bottomBar) {
-                    Button { autoScan = true; capture = true; FolioStyle.haptic() } label: {
-                        Label("Scan", systemImage: "document.viewfinder").font(.subheadline.weight(.semibold)).padding(.horizontal, 24).padding(.vertical, 6)
-                    }.buttonStyle(.glassProminent).disabled(importer.isBusy)
+                    Button { capture = true; FolioStyle.haptic() } label: {
+                        Label("Add pages", systemImage: "document.viewfinder").font(.subheadline.weight(.semibold)).padding(.horizontal, 24).padding(.vertical, 6)
+                    }.buttonStyle(.glassProminent).disabled(importer.isBusy).accessibilityIdentifier("library.addPages")
                 }
             }
             .safeAreaInset(edge: .bottom) {
@@ -87,7 +86,7 @@ struct LibraryView: View {
             .sheet(isPresented: $newBook) { BookEditor() }
             .sheet(isPresented: $searching) { SearchView(importer: importer) }
             .sheet(isPresented: $settings) { SettingsView() }
-            .sheet(isPresented: $capture) { CaptureView(books: books, importer: importer, autoScan: autoScan) }
+            .sheet(isPresented: $capture) { CaptureView(importer: importer) }
             .sheet(isPresented: $inbox) { NavigationStack { PageOrganiser(book: nil, importer: importer) } }
             .sheet(isPresented: $favourites) { FavouritePagesView(importer: importer) }
             .sheet(isPresented: $trash) { TrashView() }
@@ -108,7 +107,7 @@ struct LibraryView: View {
     private func handleRoute() {
         guard let route = router.route else { return }
         router.route = nil
-        if route == "scan" { autoScan = true; capture = true }
+        if route == "scan" { capture = true }
         if route == "inbox" { inbox = true }
     }
 }

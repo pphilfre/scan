@@ -82,7 +82,7 @@ struct PageLinksView: View {
                             if access.canRead(target) { PageRow(page: target) }
                             else { Label("Locked linked note", systemImage: "lock") }
                         }.buttonStyle(.plain)
-                        .swipeActions { Button("Unlink", role: .destructive) { link.removedAt = .now; save(); actions.register("Remove link") { link.removedAt = nil; try context.save() } } }
+                        .swipeActions { Button("Unlink", role: .destructive) { link.removedAt = .now; save(); actions.register("Remove link") { link.removedAt = nil; try LibraryPersistence.save(context) } } }
                     } else { Label("Linked page is in Recently Deleted", systemImage: "tray") }
                 }
             }
@@ -102,7 +102,7 @@ struct PageLinksView: View {
                         Button {
                             guard access.canRead(page), access.canRead(target) else { return }
                             let link = PageLink(source: page.id, target: target.id); context.insert(link); save()
-                            actions.register("Link page") { link.removedAt = .now; try context.save() }; adding = false
+                            actions.register("Link page") { link.removedAt = .now; try LibraryPersistence.save(context) }; adding = false
                         } label: { VStack(alignment: .leading, spacing: 3) { Text(target.title); Text(target.book?.title ?? "Unfiled").font(.caption).foregroundStyle(.secondary) } }.buttonStyle(.plain)
                     }.searchable(text: $query, prompt: "Find a page")
                     .navigationTitle("Link a page").navigationBarTitleDisplayMode(.inline)
@@ -112,5 +112,5 @@ struct PageLinksView: View {
             .fullScreenCover(item: $selected) { target in PageReader(pages: target.book?.orderedPages ?? [target], initialID: target.id, importer: importer) }
         }.modifier(PageProtection(page: page))
     }
-    private func save() { do { try context.save() } catch { actions.error = error.localizedDescription } }
+    private func save() { do { try LibraryPersistence.save(context) } catch { actions.error = error.localizedDescription } }
 }

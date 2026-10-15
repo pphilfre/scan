@@ -57,7 +57,7 @@ struct SectionEditor: View {
         divider.title = title.trimmingCharacters(in: .whitespacesAndNewlines)
         divider.colorName = color; divider.symbol = symbol; divider.dividerStyle = style; divider.parentID = parent
         if !wasNew && old.4 == parent && beforeID == nil {
-            do { try context.save(); dismiss() } catch { actions.error = error.localizedDescription }
+            do { try LibraryPersistence.save(context); dismiss() } catch { actions.error = error.localizedDescription }
             return
         }
         var entries = book.entries
@@ -74,12 +74,12 @@ struct SectionEditor: View {
         let placements = book.entries.map { ($0, $0.rank) }
         entries.insert(contentsOf: moving, at: position); book.applyOrder(entries)
         do {
-            try context.save()
+            try LibraryPersistence.save(context)
             actions.register(wasNew ? "Add divider" : "Edit divider") {
                 if wasNew { divider.trashedAt = .now }
                 else { divider.title = old.0; divider.colorName = old.1; divider.symbol = old.2; divider.dividerStyle = old.3; divider.parentID = old.4 }
                 for (entry, rank) in placements { switch entry { case .page(let page): page.rank = rank; case .section(let value): value.rank = rank } }
-                book.applyOrder(book.entries); try context.save()
+                book.applyOrder(book.entries); try LibraryPersistence.save(context)
             }
             dismiss()
         } catch { context.rollback(); actions.error = error.localizedDescription }

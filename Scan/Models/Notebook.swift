@@ -8,7 +8,12 @@ import SwiftData
     var symbol: String = "book.closed"
     var coverStyle: String = "linen"
     var createdAt: Date = Date()
-    var modifiedAt: Date = Date()
+    // Optional persisted additions can migrate old rows without a SQL default.
+    @Attribute(originalName: "modifiedAt") var storedModifiedAt: Date?
+    var modifiedAt: Date {
+        get { storedModifiedAt ?? createdAt }
+        set { storedModifiedAt = newValue }
+    }
     // Additive fields keep the original entity, attributes and relationships intact.
     var gradientColorName: String = "blue"
     var spineLabel: String = ""
@@ -96,9 +101,14 @@ import SwiftData
     var symbol: String = "bookmark"
     var dividerStyle: String = "tab"
     var trashedAt: Date?
-    var modifiedAt: Date = Date()
+    // Optional persisted additions can migrate old rows without a SQL default.
+    @Attribute(originalName: "modifiedAt") var storedModifiedAt: Date?
+    var modifiedAt: Date {
+        get { storedModifiedAt ?? .distantPast }
+        set { storedModifiedAt = newValue }
+    }
     init(title: String, rank: Double, book: Notebook) {
-        self.title = title; self.rank = rank; self.book = book
+        self.title = title; self.rank = rank; self.book = book; self.modifiedAt = .now
     }
 }
 

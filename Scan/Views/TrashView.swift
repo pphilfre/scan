@@ -21,7 +21,7 @@ struct TrashView: View {
                                     if book.isLocked && !access.canOpen(book) { await access.unlock(book) }
                                     guard access.canOpen(book) else { return }
                                     book.trashedAt = nil; book.modifiedAt = .now
-                                    do { try context.save(); actions.register("Restore book") { book.trashedAt = .now; book.modifiedAt = .now; try context.save() } }
+                                    do { try LibraryPersistence.save(context); actions.register("Restore book") { book.trashedAt = .now; book.modifiedAt = .now; try LibraryPersistence.save(context) } }
                                     catch { actions.error = error.localizedDescription }
                                 }
                             }.buttonStyle(.borderless)

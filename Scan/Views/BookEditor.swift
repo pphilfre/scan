@@ -58,7 +58,7 @@ struct BookEditor: View {
         target.colorName = color; target.symbol = symbol; target.coverStyle = cover
         target.modifiedAt = .now
         target.spineLabel = spine; target.gradientColorName = secondColor; target.textureStrength = texture
-        do { try context.save(); dismiss() } catch { self.error = error.localizedDescription }
+        do { try LibraryPersistence.save(context); dismiss() } catch { self.error = error.localizedDescription }
     }
 }
 

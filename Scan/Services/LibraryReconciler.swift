@@ -62,6 +62,6 @@ import SwiftData
             keep.removedAt = group.compactMap(\.removedAt).max()
             for duplicate in group.dropFirst() { context.delete(duplicate) }
         }
-        if context.hasChanges { try context.save() }
+        if context.hasChanges { try LibraryPersistence.save(context) }
     }
 }

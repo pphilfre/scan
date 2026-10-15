@@ -71,7 +71,7 @@ struct PageThumbnail: View {
                       !page.isDeleted, page.visualVersion == version else { return }
                 page.thumbnailData = data; page.thumbnailVersion = version
                 image = ThumbnailMemory.shared.image(data: data, key: key)
-                do { try context.save() } catch { /* The original and edit state already remain saved. */ }
+                do { try LibraryPersistence.save(context) } catch { /* The original and edit state already remain saved. */ }
             }
         }
     }

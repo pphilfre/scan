@@ -10,6 +10,15 @@ import CoreData
         if offline { UserDefaults.standard.set(false, forKey: "iCloudSync") }
         do {
             let schema = Schema([Notebook.self, BookSection.self, NotePage.self, PageRevision.self, PageLink.self])
+            #if DEBUG
+            if UITestFixture.enabled {
+                let config = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true, cloudKitDatabase: .none)
+                let opened = try ModelContainer(for: schema, configurations: [config])
+                try UITestFixture.seed(opened.mainContext)
+                container = opened; error = nil
+                return
+            }
+            #endif
             let sync = UserDefaults.standard.bool(forKey: "iCloudSync")
             let url = URL.applicationSupportDirectory.appending(path: "Folio.store")
             try FileManager.default.createDirectory(at: URL.applicationSupportDirectory, withIntermediateDirectories: true)
@@ -18,9 +27,9 @@ import CoreData
                 cloudKitDatabase: sync ? .private("iCloud.dev.freddiephilpot.folio") : .none)
             let opened = try ModelContainer(for: schema, configurations: [config])
             try LibraryReconciler.run(opened.mainContext)
-            try opened.mainContext.save()
+            try LibraryPersistence.save(opened.mainContext)
             container = opened
-            UserDefaults.standard.set(2, forKey: "folioStoreFormat")
+            UserDefaults.standard.set(3, forKey: "folioStoreFormat")
             error = nil
         } catch { container = nil; self.error = error.localizedDescription }
     }
@@ -46,7 +55,12 @@ import CoreData
                     }
                     .modelContainer(container)
                     .environment(access).environment(actions).environment(workspace).environment(CaptureRouter.shared)
-                    .task { await workspace.resume(context: container.mainContext) }
+                    .task {
+                        #if DEBUG
+                        if UITestFixture.enabled { return }
+                        #endif
+                        await workspace.resume(context: container.mainContext)
+                    }
                     .onReceive(NotificationCenter.default.publisher(for: ModelContext.didSave)) { _ in workspace.schedule(context: container.mainContext) }
                     .onReceive(NotificationCenter.default.publisher(for: .NSPersistentStoreRemoteChange)) { _ in
                         Task {

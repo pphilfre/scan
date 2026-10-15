@@ -61,7 +61,7 @@ jobs:
             build/Simulator/ModuleCache.noindex
             build/Simulator/SDKStatCaches.noindex
           key: modules-simulator-${{ runner.arch }}-${{ env.ImageVersion }}-xcode26.6-${{ hashFiles('project.yml') }}
-      - name: Run storage, organisation, OCR and PDF tests
+      - name: Run reader UI, capture, storage, OCR and PDF tests
         run: bash scripts/test-ios.sh
       - name: Upload test results
         if: always()

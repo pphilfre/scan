@@ -4,7 +4,7 @@ A native iOS 26 notebook for iPhone and iPad, built with SwiftUI, Liquid Glass, 
 
 ## Working folder and LiveContainer
 
-**Settings → Working folder → Choose working folder…** opens the native Files folder picker. Choose a durable location **outside Folio’s/LiveContainer’s disposable app container**. Folio creates a `Folio Library` subfolder there and automatically saves its portable library after changes.
+**Settings → Working folder → Choose working folder…** opens the native Files folder picker. Choose a durable location **outside Folio’s/LiveContainer’s disposable app container**. Folio creates a `Folio Library` subfolder there and automatically saves its portable library after changes, including imports while sheets are open. Original images use their normal file extensions in `Folio Library/originals`; folder access stays open while connected.
 
 The app uses local SwiftData for responsive offline editing. The chosen folder contains immutable originals, content-addressed page records, annotations, crops/enhancements, tags, dividers, books, bookmarks, links, deleted items and version history. Its coordinated, atomic `Library.json` index is committed after the referenced files. Unchanged originals and page records are reused.
 
@@ -17,13 +17,13 @@ Keep the folder available offline in Files. If another container changes its ind
 - Colours, two-colour gradients, linen/paper/ruled finishes, SF Symbols and spine labels.
 - Physical coloured edge tabs jump between dividers. Nested sections support parent selection, colours, icons, divider styles and ordering; section exports include descendants.
 - Configurable bookshelf and thumbnail sizes, grid/list layouts, reading background, page numbers, thumbnail strip and page-turn animations.
-- Native multi-page continuous scanning; Unfiled collects pages before filing. Photo/PDF import, paper insertion and scans can target any position.
+- A compact camera/photos/files toolbar starts capture. Native scanning supports continuous multi-page batches; originals are saved into Unfiled before a destination/position prompt appears. Photo/PDF import, paper insertion and scans can target any position.
 - Dedicated organiser with drag-and-drop, native list reordering, multi-selection, batch rename/tags, duplication, rotation, crop/enhancement, movement, export and deletion.
 - Recoverable deletion, persistent Recently Deleted and a 20-command in-session undo history. Page edits retain immutable version records; sync duplicates are reconciled without discarding competing edits or different originals.
 
 ## Reading and editing
 
-- Native page curls, swipe navigation, pinch/double-tap zoom, full screen, bookmarks and recently viewed pages within books.
+- Native page curls, swipe navigation, pinch/double-tap zoom, full screen, a fixed-height thumbnail strip with multi-page PDF sharing, bookmarks and recently viewed pages within books.
 - Accurate language-aware Vision OCR, editable/searchable text and automatic titles/date/section suggestions. Interrupted recognition resumes; the original is saved first.
 - PencilKit pen, highlighter, eraser, ruler-assisted underline and undo/redo. Ink remains separate and aligns with crop, straightening and rotation.
 - Non-destructive crop, straightening, brightness, contrast and colour/grey/ink/warm filters.
@@ -41,7 +41,7 @@ App-wide and per-book protection use `deviceOwnerAuthentication`: Face ID/Touch 
 
 Offline storage is the default. Optional CloudKit uses the same store URL, preserves edit history and consolidates duplicate app UUIDs that can arise when restoring the same folder on two devices. Concurrent page versions can be reviewed/restored. Changing sync requires reopening the app.
 
-The included Home Screen/Lock Screen widget and **Scan note** App Shortcut route to the scanner/Unfiled. **LiveContainer may not register guest-app widgets, Siri shortcuts or URL schemes with iOS.** These integrations require an installation method that exposes them to the operating system. Scanning, organisation and working-folder recovery are available inside the app.
+The included Home Screen/Lock Screen widget and **Scan note** App Shortcut route to the capture toolbar/Unfiled. **LiveContainer may not register guest-app widgets, Siri shortcuts or URL schemes with iOS.** These integrations require an installation method that exposes them to the operating system. Scanning, organisation and working-folder recovery are available inside the app.
 
 ## Build and install
 
@@ -61,8 +61,8 @@ For iCloud, register the app and `iCloud.dev.freddiephilpot.folio`, enable Cloud
 
 ## Data migration and validation
 
-The original `Notebook`, `BookSection`, `NotePage`, attributes and relationships are retained. New properties use defaults or optional values for additive lightweight migration and CloudKit compatibility. Before opening a pre-v2 local store, Folio copies the unopened SQLite/WAL/support files to `Application Support/Library Backups`. It never resets a failed store; offline retry remains available.
+The original `Notebook`, `BookSection`, `NotePage`, attributes and relationships are retained. New properties use defaults or optional values for additive lightweight migration and CloudKit compatibility. Before opening an older local store, Folio copies the unopened SQLite/WAL/support files to `Application Support/Library Backups`. It never resets a failed store; offline retry remains available.
 
-Tests include a frozen copy of the **actual version 1 models**, reopen that store with the expanded schema, and verify scan bytes, ink, OCR, tags and relationships. Other tests cover nested membership, recoverable actions and undo, linking without image copies, cropping/rotation, Vision, PDF round trips, locked-note access, portable-folder restoration into an empty container and stale-index protection.
+Tests include a frozen copy of the **actual version 1 and shipped version 2 models**, reopen those stores with the current schema, and verify scan bytes, ink, OCR, tags and relationships. Other tests cover nested membership, recoverable actions and undo, linking without image copies, cropping/rotation, Vision, PDF round trips, locked-note access, portable-folder restoration into an empty container, automatic folder saves after imports, selected PDF order and stale-index protection. UI tests launch with an isolated in-memory library and exercise image/text layout, every reader tool, PDF sharing, compact capture and the post-import destination prompt.
 
 Linux preflight checks cover Swift syntax, assets, entitlements, project/workflow structure and shell syntax. Native compilation and XCTest run in GitHub Actions. Camera, biometrics, Apple Pencil, Files providers, LiveContainer recovery and two-device sync require [device checks](docs/device-checks.md).

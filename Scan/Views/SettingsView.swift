@@ -20,7 +20,7 @@ struct SettingsView: View {
                 Section {
                     if let name = workspace.folderName {
                         LabeledContent("Folder", value: name)
-                        if let saved = workspace.lastSaved { LabeledContent("Saved", value: saved.formatted(date: .abbreviated, time: .standard)) }
+                        if let saved = workspace.lastSaved { LabeledContent("Last saved to folder", value: saved.formatted(date: .abbreviated, time: .standard)) }
                         if workspace.busy { ProgressView("Saving library…") }
                         Button("Save now", systemImage: "externaldrive.badge.checkmark") { Task { await workspace.saveNow(context: context) } }.disabled(workspace.busy || !workspace.isConnected)
                     }
@@ -28,7 +28,7 @@ struct SettingsView: View {
                     if workspace.folderName != nil { Button("Disconnect folder", role: .destructive) { disconnecting = true }.disabled(workspace.busy) }
                     if let error = workspace.error { Text(error).font(.caption).foregroundStyle(.red) }
                 } header: { Text("Working folder") } footer: {
-                    Text("Folio automatically saves a portable library here. If LiveContainer resets the app, choose the same folder to recover your books, scans and ink. Keep it outside the app’s container and available offline. Face ID protects Folio; files in this folder can still be opened in Files.")
+                    Text("Folio automatically saves into “Folio Library” inside the selected folder. Original images are in its “originals” folder. If LiveContainer resets the app, choose the same folder to recover your books, scans and ink. Keep it outside the app’s container and available offline. Face ID protects Folio; files in this folder can still be opened in Files.")
                 }
                 Section {
                     Toggle("iCloud sync", isOn: Binding(get: { iCloudSync }, set: { enabled in setSync(enabled) })).disabled(checking)
@@ -44,7 +44,7 @@ struct SettingsView: View {
                 Section("Capture") {
                     Text("Add the Folio widget to your Home Screen or Lock Screen, or use the Scan note shortcut. Pages go to Unfiled until you choose a book. Widget and shortcut availability depends on the installation method.").font(.subheadline).foregroundStyle(.secondary)
                 }
-                Section { LabeledContent("Folio", value: "2.0.0") }
+                Section { LabeledContent("Folio", value: "2.0.1") }
             }
             .navigationTitle("Settings").navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() }.disabled(workspace.busy) } }

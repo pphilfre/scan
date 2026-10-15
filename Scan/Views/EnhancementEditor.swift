@@ -17,7 +17,7 @@ struct EnhancementEditor: View {
                 if allowed {
                     Section {
                         if let preview {
-                            Image(uiImage: preview).resizable().scaledToFit()
+                            Image(uiImage: preview).resizable().scaledToFit().accessibilityLabel("Enhancement preview").accessibilityIdentifier("enhancement.preview")
                                 .overlay { GeometryReader { geometry in CropOverlay(rect: $adjustments.crop, size: geometry.size) } }.frame(maxHeight: 400)
                                 .padding(.vertical, 10)
                         } else { ProgressView("Opening page…").frame(maxWidth: .infinity, minHeight: 250) }

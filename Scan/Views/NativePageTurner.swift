@@ -72,11 +72,33 @@ final class PageImageController: UIViewController {
         let zoom = ZoomingImageView()
         zoom.backgroundColor = paper == "warm" ? UIColor(red: 0.94, green: 0.91, blue: 0.84, alpha: 1) : paper == "dark" ? UIColor(white: 0.1, alpha: 1) : .secondarySystemGroupedBackground
         view = zoom
+        let progress = UIActivityIndicatorView(style: .medium)
+        progress.translatesAutoresizingMaskIntoConstraints = false
+        zoom.addSubview(progress)
+        NSLayoutConstraint.activate([
+            progress.centerXAnchor.constraint(equalTo: zoom.frameLayoutGuide.centerXAnchor),
+            progress.centerYAnchor.constraint(equalTo: zoom.frameLayoutGuide.centerYAnchor)
+        ])
+        progress.startAnimating()
         let snapshot = snapshot
         renderingTask = Task {
             let image = await PageImageRenderer.shared.render(snapshot)
             guard !Task.isCancelled else { return }
-            zoom.setImage(image.flatMap { UIImage(data: $0) })
+            progress.removeFromSuperview()
+            if let image = image.flatMap({ UIImage(data: $0) }) { zoom.setImage(image) }
+            else {
+                let message = UILabel()
+                message.text = "This image couldn’t load. Close and reopen the page to try again."
+                message.numberOfLines = 0; message.textAlignment = .center
+                message.textColor = .secondaryLabel
+                message.translatesAutoresizingMaskIntoConstraints = false
+                zoom.addSubview(message)
+                NSLayoutConstraint.activate([
+                    message.centerYAnchor.constraint(equalTo: zoom.frameLayoutGuide.centerYAnchor),
+                    message.leadingAnchor.constraint(equalTo: zoom.frameLayoutGuide.leadingAnchor, constant: 24),
+                    message.trailingAnchor.constraint(equalTo: zoom.frameLayoutGuide.trailingAnchor, constant: -24)
+                ])
+            }
         }
     }
     deinit { renderingTask?.cancel() }
@@ -91,6 +113,10 @@ final class ZoomingImageView: UIScrollView, UIScrollViewDelegate {
         backgroundColor = .secondarySystemGroupedBackground
         showsVerticalScrollIndicator = false
         showsHorizontalScrollIndicator = false
+        contentInsetAdjustmentBehavior = .never
+        imageView.isAccessibilityElement = true
+        imageView.accessibilityIdentifier = "reader.image"
+        imageView.accessibilityLabel = "Original scanned page"
         addSubview(imageView)
         let tap = UITapGestureRecognizer(target: self, action: #selector(doubleTap(_:)))
         tap.numberOfTapsRequired = 2
@@ -99,6 +125,7 @@ final class ZoomingImageView: UIScrollView, UIScrollViewDelegate {
     }
     required init?(coder: NSCoder) { fatalError("Use init(frame:)") }
     func setImage(_ image: UIImage?) {
+        zoomScale = 1
         imageView.image = image
         imageView.frame = CGRect(origin: .zero, size: image?.size ?? .zero)
         contentSize = image?.size ?? .zero

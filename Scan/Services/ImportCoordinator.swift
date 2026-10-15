@@ -9,10 +9,11 @@ import UniformTypeIdentifiers
     var error: String?
     private var job: Task<Void, Never>?
     private var resuming = false
+    private var savedBatch: [NotePage] = []
     func cancel() { job?.cancel() }
 
-    func importScans(_ images: [UIImage], into book: Notebook?, before entryID: String? = nil, context: ModelContext) {
-        start() {
+    func importScans(_ images: [UIImage], into book: Notebook?, before entryID: String? = nil, context: ModelContext, completion: (@MainActor ([NotePage]) -> Void)? = nil) {
+        start(context: context, completion: completion) {
             for (index, image) in images.enumerated() {
                 try Task.checkCancellation()
                 self.progress = "Saving page \(index + 1) of \(images.count)…"
@@ -21,8 +22,8 @@ import UniformTypeIdentifiers
             }
         }
     }
-    func importPhotos(_ items: [PhotosPickerItem], into book: Notebook?, before entryID: String? = nil, context: ModelContext) {
-        start() {
+    func importPhotos(_ items: [PhotosPickerItem], into book: Notebook?, before entryID: String? = nil, context: ModelContext, completion: (@MainActor ([NotePage]) -> Void)? = nil) {
+        start(context: context, completion: completion) {
             for (index, item) in items.enumerated() {
                 try Task.checkCancellation()
                 self.progress = "Importing photo \(index + 1) of \(items.count)…"
@@ -32,8 +33,8 @@ import UniformTypeIdentifiers
             }
         }
     }
-    func importFiles(_ urls: [URL], into book: Notebook?, before entryID: String? = nil, context: ModelContext) {
-        start() {
+    func importFiles(_ urls: [URL], into book: Notebook?, before entryID: String? = nil, context: ModelContext, completion: (@MainActor ([NotePage]) -> Void)? = nil) {
+        start(context: context, completion: completion) {
             for url in urls {
                 try Task.checkCancellation()
                 let scoped = url.startAccessingSecurityScopedResource()
@@ -55,14 +56,22 @@ import UniformTypeIdentifiers
             }
         }
     }
-    private func start(operation: @escaping @MainActor () async throws -> Void) {
+    private func start(context: ModelContext, completion: (@MainActor ([NotePage]) -> Void)?, operation: @escaping @MainActor () async throws -> Void) {
         guard !isBusy else { return }
-        isBusy = true
+        isBusy = true; savedBatch = []
         job = Task {
             defer { isBusy = false; progress = ""; job = nil }
             do { try await operation() }
             catch is CancellationError { /* Already saved pages remain in the library. */ }
             catch { self.error = error.localizedDescription }
+            // File the captured batch as soon as its originals are safe. OCR can
+            // continue while the user chooses a destination.
+            let batch = savedBatch; savedBatch = []
+            if !batch.isEmpty { completion?(batch) }
+            for page in batch where !Task.isCancelled && page.trashedAt == nil {
+                self.progress = "Recognising handwriting on device…"
+                await self.recognise(page, context: context)
+            }
         }
     }
     private func insert(_ prepared: PreparedPage, into book: Notebook?, before entryID: String? = nil, context: ModelContext) async throws {
@@ -71,9 +80,8 @@ import UniformTypeIdentifiers
         let page = NotePage(imageData: prepared.original, thumbnailData: prepared.thumbnail, rank: book?.nextRank ?? Date.now.timeIntervalSince1970, book: book)
         context.insert(page)
         if let book { LibraryActions.place(page, in: book, before: entryID) }
-        try context.save() // Preserve the image before attempting recognition.
-        progress = "Recognising handwriting on device…"
-        await recognise(page, context: context)
+        try LibraryPersistence.save(context) // Preserve the image before attempting recognition.
+        savedBatch.append(page)
     }
     func recognise(_ page: NotePage, context: ModelContext) async {
         page.recognitionState = "recognising"
@@ -98,11 +106,11 @@ import UniformTypeIdentifiers
             page.recognitionState = result.text.isEmpty ? "empty" : "complete"
             page.modifiedAt = .now
             context.insert(PageRevision(page: page, reason: "Text recognition"))
-            try context.save()
+            try LibraryPersistence.save(context)
         } catch {
             guard !page.isDeleted else { return }
             page.recognitionState = "failed"; page.modifiedAt = .now
-            try? context.save()
+            try? LibraryPersistence.save(context)
             self.error = "The original page is saved. Text recognition couldn’t finish: " + error.localizedDescription
         }
     }

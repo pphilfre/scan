@@ -38,6 +38,112 @@ final class ExpansionTests: XCTestCase {
         XCTAssertEqual(page.rotation, 1); XCTAssertFalse(page.isBookmarked); XCTAssertNil(page.trashedAt)
         XCTAssertEqual(ImageAdjustments(data: page.enhancementData), ImageAdjustments())
     }
+    @MainActor func testExpandedStoreUpgradePreservesEnhancementsAndVersions() throws {
+        let directory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let url = directory.appending(path: "Expanded.store")
+        let version = UUID(), modified = Date(timeIntervalSince1970: 1_700_000_000)
+        let pageID: UUID = try autoreleasepool {
+            let schema = Schema([ExpandedFolio.Notebook.self, ExpandedFolio.NotePage.self, ExpandedFolio.BookSection.self, PageRevision.self, PageLink.self])
+            let config = ModelConfiguration(schema: schema, url: url, cloudKitDatabase: .none)
+            let old = try ModelContainer(for: schema, configurations: [config])
+            let book = ExpandedFolio.Notebook(title: "Existing expanded notes"); book.modifiedAt = modified
+            old.mainContext.insert(book)
+            let page = ExpandedFolio.NotePage(imageData: Data([4, 5, 6]), thumbnailData: Data([7]), rank: 0, book: book)
+            page.enhancementData = Data([10, 11]); page.revisionCoverData = Data([12, 13])
+            page.visualVersion = version; page.modifiedAt = modified; page.isBookmarked = true
+            old.mainContext.insert(page); try old.mainContext.save()
+            return page.id
+        }
+        let updated = try container(url: url)
+        let page = try XCTUnwrap(updated.mainContext.fetch(FetchDescriptor<NotePage>()).first)
+        XCTAssertEqual(page.id, pageID); XCTAssertEqual(page.imageData, Data([4, 5, 6]))
+        XCTAssertEqual(page.enhancementData, Data([10, 11])); XCTAssertEqual(page.revisionCoverData, Data([12, 13]))
+        XCTAssertEqual(page.visualVersion, version); XCTAssertEqual(page.modifiedAt, modified)
+        XCTAssertEqual(page.book?.modifiedAt, modified); XCTAssertTrue(page.isBookmarked)
+    }
+    @MainActor func testImportSavesBeforeFilingAndAutomaticallyWritesWorkingFolder() async throws {
+        let directory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let defaults = UserDefaults.standard
+        let oldBookmark = defaults.data(forKey: "workspaceBookmark"), oldName = defaults.string(forKey: "workspaceName")
+        let workspace = WorkspaceFolder()
+        defer {
+            workspace.disconnect()
+            try? FileManager.default.removeItem(at: directory)
+            defaults.set(oldBookmark, forKey: "workspaceBookmark"); defaults.set(oldName, forKey: "workspaceName")
+        }
+        let store = try container(); let context = store.mainContext
+        let book = Notebook(title: "Destination"); context.insert(book)
+        let existing = NotePage(imageData: Data([1]), thumbnailData: Data(), rank: 0, book: book)
+        context.insert(existing); try context.save()
+        try await workspace.connect(directory, context: context)
+        let prepared = try await PageTemplates.shared.make("Lined")
+        let url = directory.appending(path: "Scan.png"); try prepared.original.write(to: url)
+        let importer = ImportCoordinator()
+        var batch: [NotePage] = []
+        importer.importFiles([url], into: nil, context: context) { saved in
+            batch = saved
+            // This is the same moment the UI offers the destination prompt.
+            XCTAssertEqual(saved.count, 1); XCTAssertNil(saved.first?.book)
+            XCTAssertEqual(saved.first?.recognitionState, "pending")
+        }
+        for _ in 0..<200 where batch.isEmpty { try await Task.sleep(for: .milliseconds(50)) }
+        XCTAssertEqual(batch.count, 1)
+        let page = try XCTUnwrap(batch.first)
+        let id = page.id
+        // Do not call saveNow: importing must trigger the automatic path itself.
+        var archived: FolderManifest?
+        for _ in 0..<100 {
+            archived = try await FolderArchive.shared.manifest(in: directory)
+            if archived?.pages.contains(id) == true { break }
+            try await Task.sleep(for: .milliseconds(50))
+        }
+        let saved = try XCTUnwrap(archived)
+        XCTAssertTrue(saved.pages.contains(id), workspace.error ?? "Import never reached working folder")
+        let (_, original) = try await FolderArchive.shared.page(id, manifest: saved, folder: directory)
+        XCTAssertEqual(original, prepared.original)
+        let originals = try FileManager.default.contentsOfDirectory(at: directory.appending(path: "Folio Library/originals"), includingPropertiesForKeys: nil)
+        XCTAssertTrue(originals.contains { $0.deletingPathExtension().lastPathComponent == id.uuidString && ["jpg", "jpeg"].contains($0.pathExtension) })
+        let actions = LibraryActions()
+        actions.move([page], to: book, before: "page:" + existing.id.uuidString, in: context)
+        XCTAssertEqual(book.orderedPages.map(\.id), [id, existing.id])
+        for _ in 0..<100 {
+            let latest = try await FolderArchive.shared.manifest(in: directory)
+            if let latest {
+                let (record, _) = try await FolderArchive.shared.page(id, manifest: latest, folder: directory)
+                if record.state.bookID == book.id { archived = latest; break }
+            }
+            try await Task.sleep(for: .milliseconds(50))
+        }
+        let latest = try XCTUnwrap(archived)
+        let (record, _) = try await FolderArchive.shared.page(id, manifest: latest, folder: directory)
+        XCTAssertEqual(record.state.bookID, book.id)
+        // Finish OCR before the store is released; the original stays untouched.
+        for _ in 0..<200 where importer.isBusy { try await Task.sleep(for: .milliseconds(50)) }
+        XCTAssertFalse(importer.isBusy)
+    }
+    @MainActor func testSelectedPDFKeepsRequestedOrderAndCount() async throws {
+        let store = try container(); let context = store.mainContext
+        let prepared = try await PageTemplates.shared.make("Blank")
+        var pages: [NotePage] = []
+        for index in 0..<3 {
+            let page = NotePage(imageData: prepared.original, thumbnailData: prepared.thumbnail, rank: Double(index))
+            context.insert(page); pages.append(page)
+        }
+        pages[2].rotation = 1; try context.save()
+        let url = try await PDFExporter.shared.export(pageIDs: [pages[2].id, pages[0].id], container: store, title: "Selection")
+        defer { try? FileManager.default.removeItem(at: url) }
+        let count = try await DocumentProcessor.shared.pdfPageCount(at: url)
+        XCTAssertEqual(count, 2)
+        let first = try await DocumentProcessor.shared.renderPDFPage(at: url, index: 0)
+        let second = try await DocumentProcessor.shared.renderPDFPage(at: url, index: 1)
+        let landscape = try XCTUnwrap(UIImage(data: first.original))
+        let portrait = try XCTUnwrap(UIImage(data: second.original))
+        XCTAssertGreaterThan(landscape.size.width, landscape.size.height)
+        XCTAssertLessThan(portrait.size.width, portrait.size.height)
+    }
     @MainActor func testNestedSectionsIncludeDescendantsAndRejectCyclesInTraversal() throws {
         let store = try container(); let context = store.mainContext
         let book = Notebook(title: "Physics"); context.insert(book)

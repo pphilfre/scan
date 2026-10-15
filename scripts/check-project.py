@@ -11,6 +11,8 @@ workflow = yaml.load((root / '.github/workflows/ios.yml').read_text(), Loader=ya
 assert project['options']['deploymentTarget']['iOS'] == '26.0'
 assert 'packages' not in project, 'App should have no package dependencies'
 assert project['targets']['FolioTests']['dependencies'] == [{'target': 'Folio'}]
+assert project['targets']['FolioUITests']['type'] == 'bundle.ui-testing'
+assert set(project['schemes']['Folio']['test']['targets']) == {'FolioTests', 'FolioUITests'}
 assert project['targets']['Folio']['dependencies'] == [{'target': 'FolioWidgets', 'embed': True}]
 assert project['targets']['FolioWidgets']['type'] == 'app-extension'
 assert project['targets']['FolioWidgets']['info']['properties']['NSExtension']['NSExtensionPointIdentifier'] == 'com.apple.widgetkit-extension'

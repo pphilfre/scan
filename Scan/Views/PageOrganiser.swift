@@ -5,7 +5,6 @@ struct PageOrganiser: View {
     var book: Notebook?
     let importer: ImportCoordinator
     @Query(sort: \NotePage.rank) private var allPages: [NotePage]
-    @Query(sort: \Notebook.createdAt) private var allBooks: [Notebook]
     @Environment(\.modelContext) private var context
     @Environment(\.dismiss) private var dismiss
     @Environment(LibraryActions.self) private var actions
@@ -13,10 +12,9 @@ struct PageOrganiser: View {
     @AppStorage("thumbnailWidth") private var thumbnailWidth = 105.0
     @AppStorage("pageLayout") private var layout = "grid"
     @State private var selection: Set<UUID> = []
-    @State private var moving = false
     @State private var renaming = false
     @State private var tagging = false
-    @State private var enhancing = false
+    @State private var pageTool: OrganiserTool?
     @State private var capture = false
     @State private var template = false
     @State private var prefix = ""
@@ -49,9 +47,11 @@ struct PageOrganiser: View {
             }
         }
         .safeAreaInset(edge: .bottom) { if allowed { bottomBar } }
-        .sheet(isPresented: $moving) { DestinationPicker(pages: selected) }
-        .sheet(isPresented: $enhancing) { EnhancementEditor(pages: selected) }
-        .sheet(isPresented: $capture) { CaptureView(books: allBooks.filter { $0.trashedAt == nil }, importer: importer, initialBook: book) }
+        .sheet(item: $pageTool) { item in
+            if item.enhancing { EnhancementEditor(pages: item.pages) }
+            else { DestinationPicker(pages: item.pages) }
+        }
+        .sheet(isPresented: $capture) { CaptureView(importer: importer, initialBook: book) }
         .sheet(isPresented: $template) { TemplatePicker(book: book) }
         .sheet(item: $share) { ShareSheet(items: [$0.url]) }
         .fullScreenCover(item: $reader) { page in PageReader(pages: pages, initialID: page.id, importer: importer) }
@@ -137,8 +137,8 @@ struct PageOrganiser: View {
                     Button("Tags", systemImage: "tag") { tags = ""; tagging = true }
                     Button("Duplicate", systemImage: "plus.square.on.square") { actions.duplicate(selected, in: context) }
                     Button("Rotate", systemImage: "rotate.right") { actions.rotate(selected, in: context) }
-                    Button("Crop & enhance", systemImage: "slider.horizontal.3") { enhancing = true }
-                    Button("Move", systemImage: "folder") { moving = true }
+                    Button("Crop & enhance", systemImage: "slider.horizontal.3") { pageTool = OrganiserTool(pages: selected, enhancing: true) }
+                    Button("Move", systemImage: "folder") { pageTool = OrganiserTool(pages: selected, enhancing: false) }
                     Button("Export PDF", systemImage: "square.and.arrow.up") { export() }.disabled(exporting)
                     Button("Delete", systemImage: "trash", role: .destructive) { deleting = true }
                 } label: { Label("Actions", systemImage: "ellipsis.circle") }.disabled(selected.isEmpty)
@@ -181,6 +181,9 @@ struct PageOrganiser: View {
 
 struct DestinationPicker: View {
     let pages: [NotePage]
+    var isNewImport = false
+    var initialBook: Notebook?
+    var initialBeforeID: String?
     @Query(sort: \Notebook.createdAt) private var books: [Notebook]
     @Environment(\.modelContext) private var context
     @Environment(\.dismiss) private var dismiss
@@ -188,6 +191,12 @@ struct DestinationPicker: View {
     @Environment(AccessController.self) private var access
     @State private var bookID: UUID?
     @State private var beforeID: String?
+    init(pages: [NotePage], isNewImport: Bool = false, initialBook: Notebook? = nil, initialBeforeID: String? = nil) {
+        self.pages = pages; self.isNewImport = isNewImport
+        self.initialBook = initialBook; self.initialBeforeID = initialBeforeID
+        _bookID = State(initialValue: initialBook?.id)
+        _beforeID = State(initialValue: initialBeforeID)
+    }
     private var destination: Notebook? { books.first { $0.id == bookID && $0.trashedAt == nil && access.canOpen($0) } }
     var body: some View {
         NavigationStack {
@@ -207,16 +216,19 @@ struct DestinationPicker: View {
                     }
                 }
             }
-            .navigationTitle("Move \(pages.count) pages").navigationBarTitleDisplayMode(.inline)
+            .navigationTitle(isNewImport ? "Add \(pages.count) \(pages.count == 1 ? "page" : "pages")" : "Move \(pages.count) \(pages.count == 1 ? "page" : "pages")").navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+                ToolbarItem(placement: .cancellationAction) { Button(isNewImport ? "Keep in Unfiled" : "Cancel") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Move") {
+                    Button(isNewImport ? "Add" : "Move") {
                         guard pages.allSatisfy(access.canRead), bookID == nil || destination != nil else { return }
-                        actions.move(pages, to: destination, before: beforeID, in: context); dismiss()
+                        actions.move(pages, to: destination, before: beforeID, in: context)
+                        if actions.error == nil { dismiss() }
                     }
                 }
             }
+            .modifier(ActionError())
+            .accessibilityIdentifier("capture.destination")
             .onChange(of: bookID) { _, _ in beforeID = nil }
         }
     }
@@ -252,10 +264,16 @@ struct TemplatePicker: View {
                 page.title = style + " paper"; page.recognitionState = "complete"
                 context.insert(page)
                 if let book { LibraryActions.place(page, in: book, before: beforeEntryID) }
-                try context.save()
-                actions.register("Add paper") { page.trashedAt = .now; try context.save() }
+                try LibraryPersistence.save(context)
+                actions.register("Add paper") { page.trashedAt = .now; try LibraryPersistence.save(context) }
                 dismiss()
             } catch { actions.error = error.localizedDescription }
         }
     }
+}
+
+private struct OrganiserTool: Identifiable {
+    let id = UUID()
+    let pages: [NotePage]
+    let enhancing: Bool
 }

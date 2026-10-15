@@ -12,14 +12,9 @@ struct BookView: View {
     @AppStorage("pageLayout") private var layout = "grid"
     @AppStorage("thumbnailWidth") private var thumbnailWidth = 105.0
     @AppStorage("showPageNumbers") private var showNumbers = true
-    @State private var capture = false
+    @State private var bookSheet: BookSheet?
     @State private var editBook = false
     @State private var organiser = false
-    @State private var template = false
-    @State private var sectionEditor = false
-    @State private var editingSection: BookSection?
-    @State private var parentSection: UUID?
-    @State private var beforeEntry: String?
     @State private var selectedPage: NotePage?
     @State private var deleting = false
     @State private var share: ExportFile?
@@ -41,12 +36,16 @@ struct BookView: View {
         }
         .navigationTitle(book.title).navigationBarTitleDisplayMode(.inline)
         .toolbar { if access.canOpen(book) { toolbar } }
-        .sheet(isPresented: $capture) { CaptureView(books: [book], importer: importer, initialBook: book, beforeEntryID: beforeEntry) }
+        .sheet(item: $bookSheet) { item in
+            switch item.kind {
+            case .capture: CaptureView(importer: importer, initialBook: book, beforeEntryID: item.before)
+            case .paper: TemplatePicker(book: book, beforeEntryID: item.before)
+            case .divider: SectionEditor(book: book, section: item.section, initialParent: item.parent)
+            }
+        }
         .sheet(isPresented: $exportSections) { SectionExportPicker(book: book) }
         .sheet(isPresented: $editBook) { BookEditor(book: book) }
         .sheet(isPresented: $organiser) { NavigationStack { PageOrganiser(book: book, importer: importer) } }
-        .sheet(isPresented: $template) { TemplatePicker(book: book, beforeEntryID: beforeEntry) }
-        .sheet(isPresented: $sectionEditor) { SectionEditor(book: book, section: editingSection, initialParent: parentSection) }
         .sheet(item: $share) { ShareSheet(items: [$0.url]) }
         .fullScreenCover(item: $selectedPage) { page in PageReader(pages: book.orderedPages, initialID: page.id, importer: importer) }
         .confirmationDialog("Move this book to Recently Deleted?", isPresented: $deleting, titleVisibility: .visible) {
@@ -98,10 +97,11 @@ struct BookView: View {
     @ToolbarContentBuilder private var toolbar: some ToolbarContent {
         ToolbarItem(placement: .topBarTrailing) {
             Menu {
+                Button("Paper template", systemImage: "document.badge.plus") { bookSheet = BookSheet(kind: .paper) }
                 Button("Organise pages", systemImage: "square.grid.2x2") { organiser = true }
                 Button("Export sections…", systemImage: "square.and.arrow.up.on.square") { exportSections = true }.disabled(book.activeSections.isEmpty)
                 Button("Customise book", systemImage: "paintpalette") { editBook = true }
-                Button("Add divider", systemImage: "rectangle.split.1x2") { editingSection = nil; parentSection = nil; sectionEditor = true }
+                Button("Add divider", systemImage: "rectangle.split.1x2") { bookSheet = BookSheet(kind: .divider) }
                 Button("Export book", systemImage: "square.and.arrow.up") { export(book.orderedPages, title: book.title) }.disabled(book.orderedPages.isEmpty || exporting)
                 Button(book.isLocked ? "Remove book lock" : "Protect book", systemImage: "lock") { toggleLock() }
                 if actions.undoTitle != nil { Button("Undo", systemImage: "arrow.uturn.backward") { actions.undo() } }
@@ -109,10 +109,9 @@ struct BookView: View {
             } label: { Image(systemName: "ellipsis") }
         }
         ToolbarItem(placement: .bottomBar) {
-            Menu {
-                Button("Scan or import", systemImage: "document.viewfinder") { beforeEntry = nil; capture = true }
-                Button("Paper template", systemImage: "document.badge.plus") { beforeEntry = nil; template = true }
-            } label: { Label("Add page", systemImage: "plus").padding(.horizontal, 18).padding(.vertical, 5) }.buttonStyle(.glassProminent).disabled(importer.isBusy)
+            Button { bookSheet = BookSheet(kind: .capture) } label: {
+                Label("Add page", systemImage: "plus").padding(.horizontal, 18).padding(.vertical, 5)
+            }.buttonStyle(.glassProminent).disabled(importer.isBusy)
         }
     }
     @ViewBuilder private func pageGroup(_ pages: [NotePage]) -> some View {
@@ -138,15 +137,15 @@ struct BookView: View {
                     }
                 } else { PageRow(page: page, number: showNumbers ? book.orderedPages.firstIndex(where: { $0.id == page.id }).map { $0 + 1 } : nil) }
             }.contentShape(Rectangle())
-        }.buttonStyle(.plain)
+        }.buttonStyle(.plain).accessibilityIdentifier("book.page." + page.title)
         .draggable("page:" + page.id.uuidString)
         .dropDestination(for: String.self) { items, _ in
             guard let source = items.first else { return false }
             actions.reorder(source, before: "page:" + page.id.uuidString, in: book, context: context); return true
         }
         .contextMenu {
-            Button("Insert before", systemImage: "plus") { beforeEntry = "page:" + page.id.uuidString; capture = true }
-            Button("Insert paper before", systemImage: "document.badge.plus") { beforeEntry = "page:" + page.id.uuidString; template = true }
+            Button("Insert before", systemImage: "plus") { bookSheet = BookSheet(kind: .capture, before: "page:" + page.id.uuidString) }
+            Button("Insert paper before", systemImage: "document.badge.plus") { bookSheet = BookSheet(kind: .paper, before: "page:" + page.id.uuidString) }
             Button(page.isBookmarked ? "Remove bookmark" : "Bookmark", systemImage: "bookmark") { actions.edit([page], in: context, name: "Bookmark") { page.isBookmarked.toggle() } }
             Button("Duplicate", systemImage: "plus.square.on.square") { actions.duplicate([page], in: context) }
             Button("Rotate", systemImage: "rotate.right") { actions.rotate([page], in: context) }
@@ -170,11 +169,11 @@ struct BookView: View {
             actions.reorder(source, before: "section:" + section.id.uuidString, in: book, context: context); return true
         }
         .contextMenu {
-            Button("Edit divider", systemImage: "pencil") { editingSection = section; sectionEditor = true }
-            Button("Add subsection", systemImage: "rectangle.stack.badge.plus") { editingSection = nil; parentSection = section.id; sectionEditor = true }
+            Button("Edit divider", systemImage: "pencil") { bookSheet = BookSheet(kind: .divider, section: section) }
+            Button("Add subsection", systemImage: "rectangle.stack.badge.plus") { bookSheet = BookSheet(kind: .divider, parent: section.id) }
             Button("Insert pages here", systemImage: "plus") {
                 let items = book.entries; let index = items.firstIndex { $0.id == "section:" + section.id.uuidString } ?? items.count - 1
-                beforeEntry = items.indices.contains(index + 1) ? items[index + 1].id : nil; capture = true
+                bookSheet = BookSheet(kind: .capture, before: items.indices.contains(index + 1) ? items[index + 1].id : nil)
             }
             Button("Export section", systemImage: "square.and.arrow.up") { export(book.pages(in: section), title: section.title) }.disabled(book.pages(in: section).isEmpty)
             Button("Remove divider", systemImage: "trash", role: .destructive) { actions.removeSection(section, context: context) }
@@ -184,7 +183,7 @@ struct BookView: View {
         Task {
             if await access.authenticate(reason: "Change protection for \(book.title)") {
                 book.modifiedAt = .now; book.isLocked.toggle(); if book.isLocked { access.unlockedBooks.insert(book.id) }
-                do { try context.save() } catch { actions.error = error.localizedDescription }
+                do { try LibraryPersistence.save(context) } catch { actions.error = error.localizedDescription }
             }
         }
     }
@@ -198,4 +197,13 @@ struct BookView: View {
             catch { actions.error = error.localizedDescription }
         }
     }
+}
+
+private struct BookSheet: Identifiable {
+    enum Kind { case capture, paper, divider }
+    let id = UUID()
+    let kind: Kind
+    var before: String?
+    var section: BookSection?
+    var parent: UUID?
 }

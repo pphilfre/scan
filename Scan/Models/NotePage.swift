@@ -22,11 +22,28 @@ import SwiftData
     var book: Notebook?
     var isBookmarked: Bool = false
     var trashedAt: Date?
-    var modifiedAt: Date = Date()
-    var visualVersion: UUID = UUID()
+    // Optional persisted additions can migrate old rows without a SQL default.
+    @Attribute(originalName: "modifiedAt") var storedModifiedAt: Date?
+    var modifiedAt: Date {
+        get { storedModifiedAt ?? createdAt }
+        set { storedModifiedAt = newValue }
+    }
+    @Attribute(originalName: "visualVersion") var storedVisualVersion: UUID?
+    var visualVersion: UUID {
+        get { storedVisualVersion ?? id }
+        set { storedVisualVersion = newValue }
+    }
     var thumbnailVersion: UUID?
-    @Attribute(.externalStorage) var enhancementData: Data = Data()
-    @Attribute(.externalStorage) var revisionCoverData: Data = Data()
+    @Attribute(.externalStorage, originalName: "enhancementData") var storedEnhancementData: Data?
+    var enhancementData: Data {
+        get { storedEnhancementData ?? Data() }
+        set { storedEnhancementData = newValue }
+    }
+    @Attribute(.externalStorage, originalName: "revisionCoverData") var storedRevisionCoverData: Data?
+    var revisionCoverData: Data {
+        get { storedRevisionCoverData ?? Data() }
+        set { storedRevisionCoverData = newValue }
+    }
 
 
     init(imageData: Data, thumbnailData: Data, rank: Double, book: Notebook? = nil) {

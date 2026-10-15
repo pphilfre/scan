@@ -4,87 +4,80 @@ import PhotosUI
 import VisionKit
 import UniformTypeIdentifiers
 
+/// The entry point stays compact. The system camera/pickers provide capture;
+/// destination selection happens only after the originals have been saved.
 struct CaptureView: View {
-    let books: [Notebook]
     let importer: ImportCoordinator
     var initialBook: Notebook?
     var beforeEntryID: String?
-    var autoScan = false
-    @Environment(AccessController.self) private var access
     @Environment(\.modelContext) private var context
     @Environment(\.dismiss) private var dismiss
-    @State private var bookID: UUID?
     @State private var scanner = false
     @State private var files = false
     @State private var photos: [PhotosPickerItem] = []
-    private var destination: Notebook? { books.first { $0.id == bookID && $0.trashedAt == nil && access.canOpen($0) } }
+    @State private var batch: CapturedBatch?
+    @State private var detent: PresentationDetent = .height(116)
     var body: some View {
-        NavigationStack {
-            VStack(alignment: .leading, spacing: 24) {
-                Image(systemName: "document.viewfinder").font(.system(size: 44, weight: .ultraLight)).foregroundStyle(FolioStyle.ink).padding(.top, 25)
-                Text("Let your notes\nturn a new page.").font(.system(.largeTitle, design: .serif))
-                Text("Capture a page. Keep the original. Find every word.").font(.subheadline).foregroundStyle(.secondary)
-                Picker("Save to", selection: $bookID) {
-                    Text("Unfiled").tag(nil as UUID?)
-                    ForEach(books.filter { $0.trashedAt == nil && access.canOpen($0) }) { Text($0.title).tag(Optional($0.id)) }
-                }.padding().background(.background, in: RoundedRectangle(cornerRadius: 16))
-                Button { scanner = true } label: { CaptureOption(title: "Scan pages", subtitle: "Keep capturing, then tap Save", symbol: "camera") }
-                    .disabled(!VNDocumentCameraViewController.isSupported)
-                if !VNDocumentCameraViewController.isSupported {
-                    Text("Scan on an iPhone or iPad, or import images here.").font(.caption).foregroundStyle(.secondary)
-                }
-                PhotosPicker(selection: $photos, maxSelectionCount: 100, matching: .images) {
-                    CaptureOption(title: "Photos", subtitle: "Import one or more pages", symbol: "photo.on.rectangle")
-                }
-                Button { files = true } label: { CaptureOption(title: "Files", subtitle: "PDFs and images", symbol: "folder") }
-                Spacer(minLength: 0)
-                Label("Recognition happens on your device", systemImage: "lock.shield").font(.caption).foregroundStyle(.secondary).frame(maxWidth: .infinity)
-            }.buttonStyle(.plain).padding(28).background(FolioStyle.paper)
-            .navigationTitle("Add pages").navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Done") { dismiss() } } }
-            .onAppear { bookID = initialBook?.id }
-            .task { if autoScan && VNDocumentCameraViewController.isSupported { scanner = true } }
-            .sheet(isPresented: $scanner) {
-                ScannerView { images in
-                    importer.importScans(images, into: destination, before: beforeEntryID, context: context)
-                    dismiss()
-                } onError: { importer.error = $0 }
-                .ignoresSafeArea()
+        Group {
+            if let batch {
+                DestinationPicker(pages: batch.pages, isNewImport: true, initialBook: initialBook, initialBeforeID: beforeEntryID)
+            } else {
+                VStack(spacing: 12) {
+                    if importer.isBusy { ImportProgress(importer: importer) }
+                    else {
+                        HStack(spacing: 42) {
+                            Button { scanner = true } label: { Image(systemName: "camera").font(.title2).frame(width: 48, height: 48) }
+                                .accessibilityLabel("Scan pages").accessibilityIdentifier("capture.scan")
+                                .disabled(!VNDocumentCameraViewController.isSupported)
+                            PhotosPicker(selection: $photos, maxSelectionCount: 100, matching: .images) {
+                                Image(systemName: "photo.on.rectangle").font(.title2).frame(width: 48, height: 48)
+                            }.accessibilityLabel("Import photos").accessibilityIdentifier("capture.photos")
+                            Button { files = true } label: { Image(systemName: "folder").font(.title2).frame(width: 48, height: 48) }
+                                .accessibilityLabel("Import PDFs or images").accessibilityIdentifier("capture.files")
+                        }.buttonStyle(.plain)
+                    }
+                }.padding(20).accessibilityIdentifier("capture.toolbar")
             }
-            .fileImporter(isPresented: $files, allowedContentTypes: [.pdf, .image], allowsMultipleSelection: true) { result in
-                switch result {
-                case .success(let urls): importer.importFiles(urls, into: destination, before: beforeEntryID, context: context); dismiss()
-                case .failure(let error): importer.error = error.localizedDescription
-                }
+        }
+        .presentationDetents(batch == nil ? [.height(116)] : [.medium, .large], selection: $detent)
+        .presentationDragIndicator(.visible)
+        .interactiveDismissDisabled(importer.isBusy && batch == nil)
+        .sheet(isPresented: $scanner) {
+            ScannerView { images in
+                importer.importScans(images, into: nil, context: context, completion: { captured($0) })
+            } onError: { importer.error = $0 }
+            .ignoresSafeArea()
+        }
+        .fileImporter(isPresented: $files, allowedContentTypes: [.pdf, .image], allowsMultipleSelection: true) { result in
+            switch result {
+            case .success(let urls): importer.importFiles(urls, into: nil, context: context, completion: { captured($0) })
+            case .failure(let error): importer.error = error.localizedDescription
             }
-            .onChange(of: photos) { _, items in
-                guard !items.isEmpty else { return }
-                importer.importPhotos(items, into: destination, before: beforeEntryID, context: context)
-                photos = []
-                dismiss()
+        }
+        #if DEBUG
+        .task {
+            if UITestFixture.enabled && ProcessInfo.processInfo.arguments.contains("-ui-test-import") {
+                do { importer.importFiles([try UITestFixture.importURL()], into: nil, context: context, completion: { captured($0) }) }
+                catch { importer.error = error.localizedDescription }
             }
-        }.presentationDetents([.large])
+        }
+        #endif
+        .onChange(of: photos) { _, items in
+            guard !items.isEmpty else { return }
+            importer.importPhotos(items, into: nil, context: context, completion: { captured($0) })
+            photos = []
+        }
+        .onChange(of: importer.isBusy) { _, busy in
+            if !busy && batch == nil && importer.error != nil { dismiss() }
+        }
+    }
+    private func captured(_ pages: [NotePage]) {
+        batch = CapturedBatch(pages: pages)
+        detent = .medium
     }
 }
 
-/// Value-only label: PhotosPicker evaluates its label outside the main actor.
-struct CaptureOption: View {
-    nonisolated let title: String
-    nonisolated let subtitle: String
-    nonisolated let symbol: String
-
-    nonisolated init(title: String, subtitle: String, symbol: String) {
-        self.title = title
-        self.subtitle = subtitle
-        self.symbol = symbol
-    }
-
-    var body: some View {
-        HStack(spacing: 16) {
-            Image(systemName: symbol).font(.title2.weight(.light)).foregroundStyle(FolioStyle.ink).frame(width: 30)
-            VStack(alignment: .leading, spacing: 5) { Text(title).font(.headline); Text(subtitle).font(.caption).foregroundStyle(.secondary) }
-            Spacer()
-            Image(systemName: "chevron.right").font(.caption).foregroundStyle(.tertiary)
-        }.padding(19).background(.background, in: RoundedRectangle(cornerRadius: 18))
-    }
+struct CapturedBatch: Identifiable {
+    let id = UUID()
+    let pages: [NotePage]
 }

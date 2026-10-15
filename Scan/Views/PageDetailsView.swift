@@ -22,7 +22,7 @@ struct PageDetailsView: View {
                     if let book = page.book {
                         Picker("Section", selection: $sectionID) {
                             Text("Before first divider").tag(nil as UUID?)
-                            ForEach((book.sections ?? []).sorted { $0.rank < $1.rank }) { Text($0.title).tag(Optional($0.id)) }
+                            ForEach(book.activeSections) { Text($0.title).tag(Optional($0.id)) }
                         }
                     }
                     if let date = page.detectedDate { LabeledContent("Detected date", value: date.formatted(date: .abbreviated, time: .omitted)) }
@@ -48,7 +48,7 @@ struct PageDetailsView: View {
     }
     private func useSuggestion() {
         guard let book = page.book else { return }
-        if let section = book.sections?.first(where: { $0.title.localizedStandardCompare(page.suggestedSection) == .orderedSame }) { sectionID = section.id }
+        if let section = book.activeSections.first(where: { $0.title.localizedStandardCompare(page.suggestedSection) == .orderedSame }) { sectionID = section.id }
         else {
             suggestedNewSection = page.suggestedSection
         }
