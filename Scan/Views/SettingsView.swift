@@ -31,7 +31,7 @@ struct SettingsView: View {
                     Text("Folio automatically saves a portable library here. If LiveContainer resets the app, choose the same folder to recover your books, scans and ink. Keep it outside the app’s container and available offline. Face ID protects Folio; files in this folder can still be opened in Files.")
                 }
                 Section {
-                    Toggle("iCloud sync", isOn: Binding(get: { iCloudSync }, set: setSync)).disabled(checking)
+                    Toggle("iCloud sync", isOn: Binding(get: { iCloudSync }, set: { enabled in setSync(enabled) })).disabled(checking)
                     if checking { ProgressView("Checking iCloud…") }
                 } header: { Text("Sync") } footer: { Text("Offline access stays available. Changes keep a version history. Restart Folio after changing sync. iCloud needs a signed installation with the matching CloudKit capability.") }
                 Section {

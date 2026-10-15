@@ -118,12 +118,12 @@ import Observation
         if case .section(let section) = entry { section.parentID = nil }
         book.applyOrder(result)
         do { try context.save(); register("Reorder pages") { placements.forEach { $0.restore() }; try context.save() } }
-        catch { context.rollback(); error = error.localizedDescription }
+        catch { context.rollback(); self.error = error.localizedDescription }
     }
     func trashBook(_ book: Notebook, context: ModelContext) {
         book.trashedAt = .now; book.modifiedAt = .now
         do { try context.save(); register("Delete book") { book.trashedAt = nil; book.modifiedAt = .now; try context.save() } }
-        catch { context.rollback(); error = error.localizedDescription }
+        catch { context.rollback(); self.error = error.localizedDescription }
     }
     func removeSection(_ section: BookSection, context: ModelContext) {
         guard let book = section.book else { return }
@@ -132,7 +132,7 @@ import Observation
         for child in book.activeSections where child.parentID == section.id { child.parentID = section.parentID }
         book.applyOrder(book.entries)
         do { try context.save(); register("Remove divider") { placements.forEach { $0.restore() }; try context.save() } }
-        catch { context.rollback(); error = error.localizedDescription }
+        catch { context.rollback(); self.error = error.localizedDescription }
     }
 }
 
