@@ -2,8 +2,8 @@ import SwiftUI
 import VisionKit
 
 struct ScannerView: UIViewControllerRepresentable {
-    let onComplete: ([UIImage]) -> Void
-    let onError: (String) -> Void
+    let onComplete: @MainActor ([UIImage]) -> Void
+    let onError: @MainActor (String) -> Void
     @Environment(\.dismiss) private var dismiss
     func makeCoordinator() -> Coordinator { Coordinator(self) }
     func makeUIViewController(context: Context) -> VNDocumentCameraViewController {
@@ -12,7 +12,8 @@ struct ScannerView: UIViewControllerRepresentable {
         return controller
     }
     func updateUIViewController(_ controller: VNDocumentCameraViewController, context: Context) {}
-    final class Coordinator: NSObject, VNDocumentCameraViewControllerDelegate {
+    // VisionKit delivers document-camera delegate callbacks on the main thread.
+    @MainActor final class Coordinator: NSObject, @preconcurrency VNDocumentCameraViewControllerDelegate {
         let parent: ScannerView
         init(_ parent: ScannerView) { self.parent = parent }
         func documentCameraViewController(_ controller: VNDocumentCameraViewController, didFinishWith scan: VNDocumentCameraScan) {

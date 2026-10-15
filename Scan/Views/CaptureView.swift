@@ -27,13 +27,13 @@ struct CaptureView: View {
                 } else {
                     Picker("Save to", selection: $bookID) { ForEach(books) { Text($0.title).tag(Optional($0.id)) } }
                         .padding().background(.background, in: RoundedRectangle(cornerRadius: 16))
-                    Button { scanner = true } label: { option("Scan pages", subtitle: "Auto crop, straighten and enhance", symbol: "camera") }
+                    Button { scanner = true } label: { CaptureOption(title: "Scan pages", subtitle: "Auto crop, straighten and enhance", symbol: "camera") }
                         .disabled(!VNDocumentCameraViewController.isSupported || destination == nil)
                     if !VNDocumentCameraViewController.isSupported {
                         Text("Document scanning needs a supported iPhone or iPad. You can import photos or PDFs here.").font(.caption).foregroundStyle(.secondary)
                     }
-                    PhotosPicker(selection: $photos, maxSelectionCount: 50, matching: .images) { option("Import photos", subtitle: "Handwriting, whiteboards and loose pages", symbol: "photo.on.rectangle") }
-                    Button { files = true } label: { option("Import files", subtitle: "PDFs and images from Files", symbol: "folder") }
+                    PhotosPicker(selection: $photos, maxSelectionCount: 50, matching: .images) { CaptureOption(title: "Import photos", subtitle: "Handwriting, whiteboards and loose pages", symbol: "photo.on.rectangle") }
+                    Button { files = true } label: { CaptureOption(title: "Import files", subtitle: "PDFs and images from Files", symbol: "folder") }
                 }
                 Spacer(minLength: 0)
                 Label("Recognition happens on your device", systemImage: "lock.shield").font(.caption).foregroundStyle(.secondary).frame(maxWidth: .infinity)
@@ -65,7 +65,21 @@ struct CaptureView: View {
             }
         }.presentationDetents([.large])
     }
-    private func option(_ title: String, subtitle: String, symbol: String) -> some View {
+}
+
+/// Value-only label: PhotosPicker evaluates its label outside the main actor.
+struct CaptureOption: View {
+    nonisolated let title: String
+    nonisolated let subtitle: String
+    nonisolated let symbol: String
+
+    nonisolated init(title: String, subtitle: String, symbol: String) {
+        self.title = title
+        self.subtitle = subtitle
+        self.symbol = symbol
+    }
+
+    var body: some View {
         HStack(spacing: 16) {
             Image(systemName: symbol).font(.title2.weight(.light)).foregroundStyle(FolioStyle.ink).frame(width: 30)
             VStack(alignment: .leading, spacing: 5) { Text(title).font(.headline); Text(subtitle).font(.caption).foregroundStyle(.secondary) }

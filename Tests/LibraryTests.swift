@@ -5,6 +5,13 @@ import PencilKit
 @testable import Folio
 
 final class LibraryTests: XCTestCase {
+    // This intentionally has no @MainActor: it covers PhotosPicker's label context.
+    func testCaptureOptionCanBeCreatedOutsideMainActor() {
+        let label = CaptureOption(title: "Import photos", subtitle: "Choose images", symbol: "photo.on.rectangle")
+        XCTAssertEqual(label.title, "Import photos")
+        XCTAssertEqual(label.symbol, "photo.on.rectangle")
+    }
+
     @MainActor private func makeContainer() throws -> ModelContainer {
         let schema = Schema([Notebook.self, NotePage.self, BookSection.self])
         return try ModelContainer(for: schema, configurations: [ModelConfiguration(schema: schema, isStoredInMemoryOnly: true, cloudKitDatabase: .none)])
